@@ -30,3 +30,16 @@ urlpatterns = [
     path("api/auth/me/", get_user_profile, name='user_profile'),
     path("api/", include('core.api_urls')),
 ]
+
+from django.conf import settings
+from django.conf.urls.static import static
+from django.urls import re_path
+from django.views.static import serve
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+else:
+    # Serve media manually in production (since we are not using S3/External storage)
+    urlpatterns += [
+        re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
+    ]

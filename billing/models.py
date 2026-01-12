@@ -38,6 +38,18 @@ class Invoice(models.Model):
     def __str__(self):
         return f"INV-{self.invoice_number}"
 
+    def save(self, *args, **kwargs):
+        if not self.invoice_number:
+            import uuid
+            import time
+            # Format: INV-YYYYMMDD-XXXX
+            from django.utils import timezone
+            now = timezone.now()
+            date_str = now.strftime('%Y%m%d')
+            uid = str(uuid.uuid4())[:4].upper()
+            self.invoice_number = f"INV-{date_str}-{uid}"
+        super().save(*args, **kwargs)
+
 class UtilityBill(models.Model):
     """
     Represents a meter reading event that generates a cost.

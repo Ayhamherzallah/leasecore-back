@@ -24,7 +24,7 @@ class UnitSerializer(serializers.ModelSerializer):
             # Avoid circular import issues by importing here if necessary, 
             # though standard imports usually work if models are loaded.
             # Using reverse relation 'contracts'
-            contract = obj.contracts.filter(status='ACTIVE').select_related('tenant').first()
+            contract = obj.contracts.filter(status='ACTIVE').order_by('-id').select_related('tenant').first()
             if contract:
                 # Calculate Total Paid
                 # We need to import Sum here or at top level. 
@@ -48,6 +48,7 @@ class UnitSerializer(serializers.ModelSerializer):
                     "id": contract.id,
                     "start_date": contract.start_date,
                     "end_date": contract.end_date,
+                    "contract_file": contract.contract_file.url if contract.contract_file else None,
                     "rent_amount": contract.rent_amount,
                     "payment_frequency": contract.payment_frequency,
                     "security_deposit": contract.security_deposit,

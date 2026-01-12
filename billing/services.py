@@ -34,7 +34,7 @@ class BillingService:
                 invoice_type=Invoice.InvoiceType.RENT,
                 issue_date=contract.start_date if is_first else inst['due_date'], # Issue date for future invoices can be the due date or now. Let's say due date.
                 due_date=inst['due_date'],
-                total_amount=inst['amount'],
+                total_amount=Decimal(str(inst['amount'])),
                 status=status
             )
             

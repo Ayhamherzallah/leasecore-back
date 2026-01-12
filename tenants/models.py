@@ -38,6 +38,7 @@ class Contract(models.Model):
         QUARTERLY = 'QUARTERLY', _('Quarterly')
         BIANNUALLY = 'BIANNUALLY', _('Bi-Annually')
         YEARLY = 'YEARLY', _('Yearly')
+        CUSTOM = 'CUSTOM', _('Custom Schedule')
 
     tenant = models.ForeignKey(Tenant, on_delete=models.PROTECT, related_name='contracts')
     unit = models.ForeignKey('properties.Unit', on_delete=models.PROTECT, related_name='contracts')
@@ -49,6 +50,7 @@ class Contract(models.Model):
     payment_frequency = models.CharField(max_length=20, choices=PaymentFrequency.choices)
     security_deposit = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     
+    contract_file = models.FileField(upload_to='contracts/', blank=True, null=True, help_text="Signed contract PDF")
     status = models.CharField(max_length=20, choices=ContractStatus.choices, default=ContractStatus.DRAFT, db_index=True)
 
     created_at = models.DateTimeField(auto_now_add=True)

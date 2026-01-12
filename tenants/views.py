@@ -7,6 +7,9 @@ from .models import Tenant, Contract
 from properties.models import Unit
 from .serializers import TenantSerializer, ContractSerializer
 
+import logging
+logger = logging.getLogger(__name__)
+
 class TenantViewSet(viewsets.ModelViewSet):
     """
     Standard ViewSet for managing Tenants.
@@ -22,6 +25,10 @@ class ContractViewSet(viewsets.ModelViewSet):
     queryset = Contract.objects.all()
     serializer_class = ContractSerializer
     filterset_fields = ['tenant', 'unit', 'status']
+
+    def create(self, request, *args, **kwargs):
+        logger.info(f"Creating Contract Payload: {request.data}")
+        return super().create(request, *args, **kwargs)
 
     @action(detail=True, methods=['post'])
     def terminate(self, request, pk=None):
@@ -108,12 +115,24 @@ class ContractViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         from billing.services import BillingService
-        contract = serializer.save()
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from rest_framework.exceptions import ValidationError as DRFValidationError
         
-        # Check for installments in the request
-        installments = self.request.data.get('installments', [])
-        if installments:
-             BillingService.create_schedule(contract, installments)
-        else:
-             # Fallback if no specific schedule: create just one for start date
-             BillingService.create_schedule(contract, [{'due_date': contract.start_date, 'amount': contract.rent_amount}])
+        logger.info(f"Performing Create: Validated Data: {serializer.validated_data}")
+        
+        try:
+            with transaction.atomic():
+                contract = serializer.save()
+                
+                # Check for installments in the request
+                installments = self.request.data.get('installments', [])
+                logger.info(f"Installments provided: {len(installments)} items")
+                
+                if installments:
+                     BillingService.create_schedule(contract, installments)
+                else:
+                     # Fallback if no specific schedule: create just one for start date
+                     BillingService.create_schedule(contract, [{'due_date': contract.start_date, 'amount': contract.rent_amount}])
+        except DjangoValidationError as e:
+            # Re-raise as DRF ValidationError to return 400 Bad Request instead of 500
+            raise DRFValidationError({"detail": e.messages if hasattr(e, 'messages') else str(e)})

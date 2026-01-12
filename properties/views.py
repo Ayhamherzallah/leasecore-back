@@ -43,10 +43,35 @@ class UnitViewSet(viewsets.ModelViewSet):
     filterset_fields = ['floor', 'floor__building', 'status']
 
     def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        force = request.query_params.get('force', 'false') == 'true'
+
         try:
             return super().destroy(request, *args, **kwargs)
         except ProtectedError:
-            return Response(
-                {"error": "Cannot delete this unit because it is linked to existing contracts or other records."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            if force:
+                # Cascade Delete Logic - Adjusted to PRESERVE Financials
+                
+                # 1. Detach Expenses (Preserve record, just unlink unit)
+                if hasattr(instance, 'expenses'):
+                    instance.expenses.update(unit=None)
+                
+                # 2. Handle Contracts (Must delete Contract because unit is non-nullable, BUT preserve Invoices)
+                if hasattr(instance, 'contracts'):
+                    for contract in instance.contracts.all():
+                        # Detach Invoices from Contract (set contract=None)
+                        if hasattr(contract, 'invoices'):
+                            # Use update() for bulk efficiency
+                            contract.invoices.update(contract=None)
+                        
+                        # Now we can safely delete the contract without losing invoices
+                        contract.delete()
+                
+                # 3. Delete Unit
+                instance.delete()
+                return Response(status=status.HTTP_204_NO_CONTENT)
+            else:
+                return Response(
+                    {"error": "Cannot delete this unit because it is linked to history (Contracts/Invoices). Use force delete to remove all history.", "can_force": True},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
