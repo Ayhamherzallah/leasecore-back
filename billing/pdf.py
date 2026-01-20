@@ -230,8 +230,8 @@ def generate_invoice_pdf(invoice):
     y_totals = final_row_y - 50
     
     # Create a totals box on the right
-    box_x = width - 250
-    box_width = 210
+    box_x = width - 280
+    box_width = 240
     
     # Background - Light gold tint
     c.setFillColor(HexColor('#FBF8F3'))
@@ -245,29 +245,27 @@ def generate_invoice_pdf(invoice):
     y_total_line = y_totals - 15
     
     def draw_total_line(y, label, amount, is_main=False, is_alert=False):
-        # Label
+        # Label (right side)
         label_color = GOLD_MEDIUM if not is_main and not is_alert else GOLD_DARK if is_main else RED_ALERT
         c.setFillColor(label_color)
         c.setFont(font_name, 10 if not is_main else 12)
-        c.drawRightString(width - 60, y, ar(label))
+        c.drawRightString(width - 50, y, ar(label))
         
-        # Amount and JOD positioning
+        # Amount (left side of box)
         amount_color = GOLD if is_main else RED_ALERT if is_alert else GOLD_DARK
         c.setFillColor(amount_color)
         amount_font_size = 14 if is_main else 11
         c.setFont(font_name, amount_font_size)
         
-        # Draw amount
+        # Draw amount at fixed position
         amount_str = f"{amount:,.2f}"
-        amount_x = width - 100  # Position for amount
-        c.drawRightString(amount_x, y, amount_str)
+        c.drawString(box_x + 15, y, amount_str)
         
-        # JOD - positioned to the RIGHT of the amount (after it)
+        # Currency in Arabic - positioned after amount
         c.setFont(font_name, 8)
         c.setFillColor(GOLD_MEDIUM)
-        # Position JOD slightly to the right of where amount ends
-        jod_x = amount_x + 5
-        c.drawString(jod_x, y - 1, "JOD")
+        amount_width = c.stringWidth(amount_str, font_name, amount_font_size)
+        c.drawString(box_x + 15 + amount_width + 5, y, ar("دينار"))
         
         return y - 22
     
@@ -293,7 +291,7 @@ def generate_invoice_pdf(invoice):
     c.setFillColor(GOLD_MEDIUM)
     c.setFont(font_name, 8)
     c.drawCentredString(width / 2, footer_y + 10, ar("أبو رخية بلازا - إدارة العقارات"))
-    c.drawCentredString(width / 2, footer_y, ar("عمان، الدوار السابع، شارع عبدالله غوشة"))
+    c.drawCentredString(width / 2, footer_y, ar("عمان، الدوار السابع، شارع عبدالله غوشه"))
 
     c.showPage()
     c.save()
