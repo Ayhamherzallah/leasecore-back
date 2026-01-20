@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from billing.views import InvoiceViewSet, PaymentViewSet, ChequeViewSet, InvoiceTypeViewSet
+from billing.knowledge_tax_report import knowledge_tax_report
 from expenses.views import ExpenseViewSet, ExpenseCategoryViewSet
 from accounting.views import LedgerEntryViewSet, ReportsViewSet
 from tenants.views import TenantViewSet, ContractViewSet
@@ -25,4 +26,5 @@ router.register(r'properties/units', UnitViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('billing/knowledge-tax-report/', knowledge_tax_report, name='knowledge-tax-report'),
 ]
