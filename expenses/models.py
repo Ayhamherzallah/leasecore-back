@@ -18,6 +18,7 @@ class Expense(models.Model):
     category = models.ForeignKey(ExpenseCategory, on_delete=models.PROTECT, related_name='expenses')
     description = models.CharField(max_length=255)
     vendor_name = models.CharField(max_length=255, blank=True)
+    expense_for = models.CharField(max_length=255, blank=True, help_text="Custom description for the PDF (As Expense Of)")
     
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     expense_date = models.DateField(db_index=True)

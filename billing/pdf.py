@@ -432,12 +432,15 @@ def generate_expense_pdf(expense):
     y = draw_field("Category", "التصنيف", cat_name, y)
 
     # 5. Description (For)
-    # Combine description and building info if relevant
-    desc = expense.description
-    if expense.unit:
-        desc += f" - Unit {expense.unit.unit_number}"
-    elif expense.building:
-        desc += f" - {expense.building.name}"
+    # Use explicit expense_for if available (Dynamic like payments)
+    desc = expense.expense_for
+    if not desc:
+        # Fallback to standard description + location
+        desc = expense.description
+        if expense.unit:
+            desc += f" - Unit {expense.unit.unit_number}"
+        elif expense.building:
+            desc += f" - {expense.building.name}"
         
     y = draw_field("Description", "وذلك عن", desc, y)
 
