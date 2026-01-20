@@ -4,11 +4,16 @@ from rest_framework.response import Response
 from django.http import HttpResponse
 import io
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import Invoice, Payment, Cheque
-from .serializers import InvoiceSerializer, PaymentSerializer, ChequeSerializer
+from .models import Invoice, Payment, Cheque, InvoiceType
+from .serializers import InvoiceSerializer, PaymentSerializer, ChequeSerializer, InvoiceTypeSerializer
 from .services import BillingService
 from .pdf import generate_invoice_pdf, generate_receipt_pdf
 from users.permissions import CanPerformFinancialCommand
+
+class InvoiceTypeViewSet(viewsets.ModelViewSet):
+    queryset = InvoiceType.objects.all().order_by('name')
+    serializer_class = InvoiceTypeSerializer
+    permission_classes = [CanPerformFinancialCommand]
 
 class ChequeViewSet(viewsets.ModelViewSet):
     """

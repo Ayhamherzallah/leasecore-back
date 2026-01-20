@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from billing.views import InvoiceViewSet, PaymentViewSet, ChequeViewSet
+from billing.views import InvoiceViewSet, PaymentViewSet, ChequeViewSet, InvoiceTypeViewSet
 from expenses.views import ExpenseViewSet, ExpenseCategoryViewSet
 from accounting.views import LedgerEntryViewSet, ReportsViewSet
 from tenants.views import TenantViewSet, ContractViewSet
@@ -12,6 +12,7 @@ router.register(r'users', UserViewSet)
 router.register(r'billing/invoices', InvoiceViewSet)
 router.register(r'billing/payments', PaymentViewSet)
 router.register(r'billing/cheques', ChequeViewSet)
+router.register(r'billing/invoice-types', InvoiceTypeViewSet)
 router.register(r'expense-categories', ExpenseCategoryViewSet)
 router.register(r'expenses', ExpenseViewSet)
 router.register(r'accounting/ledger', LedgerEntryViewSet)

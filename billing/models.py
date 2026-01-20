@@ -1,8 +1,17 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+class InvoiceType(models.Model):
+    name = models.CharField(max_length=100, unique=True, help_text="e.g. Rent, Utility, Service Fee")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
 class Invoice(models.Model):
-    class InvoiceType(models.TextChoices):
+    # Removed strict choices to allow dynamic types
+    # Legacy choices for reference or default populating
+    class InvoiceTypeChoices(models.TextChoices):
         RENT = 'RENT', _('Rent')
         UTILITY = 'UTILITY', _('Utility')
         SERVICE = 'SERVICE', _('Service Fee')
@@ -20,7 +29,8 @@ class Invoice(models.Model):
     tenant = models.ForeignKey('tenants.Tenant', on_delete=models.PROTECT, related_name='invoices')
     
     invoice_number = models.CharField(max_length=50, unique=True, db_index=True)
-    invoice_type = models.CharField(max_length=20, choices=InvoiceType.choices)
+    # Changed: Removed choices=... to allow dynamic strings from InvoiceType model
+    invoice_type = models.CharField(max_length=50) 
     issue_date = models.DateField(db_index=True)
     due_date = models.DateField(db_index=True)
     

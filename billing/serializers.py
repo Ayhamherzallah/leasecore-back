@@ -1,6 +1,11 @@
 from rest_framework import serializers
-from .models import Invoice, Payment, UtilityBill, Cheque
+from .models import Invoice, Payment, UtilityBill, Cheque, InvoiceType
 from accounting.models import LedgerEntry
+
+class InvoiceTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InvoiceType
+        fields = '__all__'
 
 class ChequeSerializer(serializers.ModelSerializer):
     invoice_number = serializers.CharField(source='payment.invoice.invoice_number', read_only=True)
