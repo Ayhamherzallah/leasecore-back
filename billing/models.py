@@ -38,6 +38,23 @@ class Invoice(models.Model):
     total_amount = models.DecimalField(max_digits=12, decimal_places=2)
     paid_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     
+    # Knowledge Tax (ضريبة المعارف) Tracking
+    knowledge_tax_amount = models.DecimalField(
+        max_digits=12, 
+        decimal_places=2, 
+        default=0.00,
+        help_text="Amount of Knowledge Tax (ضريبة المعارف) for this invoice"
+    )
+    knowledge_tax_paid = models.BooleanField(
+        default=False,
+        help_text="Whether the Knowledge Tax has been paid to the municipality"
+    )
+    knowledge_tax_paid_date = models.DateField(
+        null=True, 
+        blank=True,
+        help_text="Date when Knowledge Tax was paid"
+    )
+    
     status = models.CharField(max_length=20, choices=InvoiceStatus.choices, default=InvoiceStatus.DRAFT, db_index=True)
     
     created_at = models.DateTimeField(auto_now_add=True)
