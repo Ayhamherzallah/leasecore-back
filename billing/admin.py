@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Invoice, Payment, UtilityBill
+from .models import Invoice, Payment, UtilityBill, Cheque
 
 # NOTE: InvoiceItem model does not exist in standard spec, removing inline.
 # If itemized invoices are needed later, a model migration is required.
@@ -17,6 +17,13 @@ class PaymentAdmin(admin.ModelAdmin):
     list_filter = ("payment_date", "payment_method")
     search_fields = ("reference_number", "invoice__invoice_number")
     autocomplete_fields = ["invoice"]
+
+@admin.register(Cheque)
+class ChequeAdmin(admin.ModelAdmin):
+    list_display = ("cheque_number", "bank_name", "cheque_date", "amount", "status", "drawer_name")
+    list_filter = ("status", "cheque_date", "bank_name")
+    search_fields = ("cheque_number", "drawer_name", "bank_name", "payment__reference_number")
+    raw_id_fields = ("payment",)
 
 @admin.register(UtilityBill)
 class UtilityBillAdmin(admin.ModelAdmin):

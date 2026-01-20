@@ -13,10 +13,11 @@ class FloorSerializer(serializers.ModelSerializer):
 
 class UnitSerializer(serializers.ModelSerializer):
     active_contract = serializers.SerializerMethodField()
+    floor_name = serializers.CharField(source='floor.name', read_only=True)
 
     class Meta:
         model = Unit
-        fields = ['id', 'unit_number', 'unit_type', 'status', 'area', 'market_rent', 'floor', 'active_contract']
+        fields = ['id', 'unit_number', 'unit_type', 'status', 'area', 'market_rent', 'floor', 'floor_name', 'active_contract']
 
     def get_active_contract(self, obj):
         # Return full details of the active contract if exists

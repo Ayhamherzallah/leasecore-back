@@ -24,6 +24,7 @@ class Expense(models.Model):
     
     # Traceability
     invoice_reference = models.CharField(max_length=100, blank=True, help_text="Vendor Invoice Number")
+    attachment = models.FileField(upload_to='expenses/%Y/%m/', blank=True, null=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

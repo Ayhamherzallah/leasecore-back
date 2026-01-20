@@ -1,12 +1,18 @@
 from rest_framework import serializers
-from .models import Tenant, Contract
+from .models import Tenant, Contract, TenantDocument
+
+class TenantDocumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TenantDocument
+        fields = ['id', 'document', 'description', 'created_at']
 
 class TenantSerializer(serializers.ModelSerializer):
     financial_stats = serializers.SerializerMethodField()
+    documents = TenantDocumentSerializer(many=True, read_only=True)
 
     class Meta:
         model = Tenant
-        fields = ['id', 'name', 'national_id', 'email', 'phone', 'tenant_type', 'financial_stats']
+        fields = ['id', 'name', 'national_id', 'tax_number', 'email', 'phone', 'tenant_type', 'documents', 'financial_stats']
 
     def get_financial_stats(self, obj):
         from billing.models import Invoice

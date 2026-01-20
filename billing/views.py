@@ -26,8 +26,9 @@ class ChequeViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def deposit(self, request, pk=None):
         cheque = self.get_object()
+        deposit_image = request.FILES.get('deposit_image')
         try:
-            BillingService.deposit_cheque(cheque)
+            BillingService.deposit_cheque(cheque, deposit_image=deposit_image)
             return Response(self.get_serializer(cheque).data)
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -139,11 +140,43 @@ class PaymentViewSet(mixins.CreateModelMixin,
         POST /api/billing/payments/
         Strict delegation to BillingService.receive_payment
         """
-        serializer = self.get_serializer(data=request.data)
+        data = request.data.copy()
+        
+        # Helper: Restructure flat FormData fields into nested cheque_details for Serializer
+        if data.get('payment_method') == 'CHECK':
+            if 'cheque_number' not in data:
+                print("DEBUG: Missing cheque_number for CHECK payment")
+                return Response({"error": "Cheque Number is required for Check payments."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            cheque_data = {
+                'cheque_number': data.get('cheque_number'),
+                'bank_name': data.get('bank_name'),
+                'drawer_name': data.get('drawer_name'),
+                'cheque_date': data.get('cheque_date'),
+                'amount': data.get('amount'),
+                'note': data.get('note') or data.get('reference_number'),
+            }
+            # Handle File upload for cheque
+            if 'cheque_image' in request.FILES:
+                cheque_data['cheque_image'] = request.FILES['cheque_image']
+            elif 'cheque_image' in data and hasattr(data['cheque_image'], 'read'):
+                 cheque_data['cheque_image'] = data['cheque_image']
+            
+            print(f"DEBUG: Cheque Data Constructed: {cheque_data}")     
+            data['cheque_details'] = cheque_data
+
+        serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
         
+        print(f"DEBUG: Serializer Validated Data Keys: {serializer.validated_data.keys()}")
+
         # Extract validated data
         payment_data = {**serializer.validated_data}
+        
+        # FALLBACK: If serializer dropped cheque_details (e.g. strict model matching), force inject it
+        if 'cheque_details' not in payment_data and 'cheque_details' in data:
+            print("WARNING: cheque_details missing from validated_data, injecting raw data as fallback.")
+            payment_data['cheque_details'] = data['cheque_details']
 
         try:
             # Delegate to Service

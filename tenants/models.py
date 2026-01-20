@@ -10,7 +10,8 @@ class Tenant(models.Model):
     tenant_type = models.CharField(max_length=20, choices=TenantType.choices, default=TenantType.INDIVIDUAL)
     
     # Identity
-    national_id = models.CharField(max_length=50, blank=True, help_text="National ID or Tax Registration Number")
+    national_id = models.CharField(max_length=50, blank=True, help_text="National ID / Passport Number")
+    tax_number = models.CharField(max_length=50, blank=True, help_text="Tax Identification Number")
     email = models.EmailField(blank=True)
     phone = models.CharField(max_length=20)
     
@@ -25,6 +26,15 @@ class Tenant(models.Model):
 
     def __str__(self):
         return self.name
+
+class TenantDocument(models.Model):
+    tenant = models.ForeignKey(Tenant, related_name='documents', on_delete=models.CASCADE)
+    document = models.FileField(upload_to='tenants/docs/%Y/%m/')
+    description = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Doc for {self.tenant.name}"
 
 class Contract(models.Model):
     class ContractStatus(models.TextChoices):

@@ -89,6 +89,9 @@ class Payment(models.Model):
     payment_date = models.DateField(db_index=True)
     payment_method = models.CharField(max_length=20, choices=PaymentMethod.choices)
     reference_number = models.CharField(max_length=100, blank=True, help_text="Check number or Transaction identifier")
+    proof_document = models.FileField(upload_to='payments/%Y/%m/', blank=True, null=True)
+    notes = models.TextField(blank=True, help_text="Internal notes or additional comments")
+    payment_for = models.CharField(max_length=255, blank=True, help_text="Description of what is being paid for (As Payment Of)")
     
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -120,6 +123,7 @@ class Cheque(models.Model):
     status = models.CharField(max_length=20, choices=ChequeStatus.choices, default=ChequeStatus.RECEIVED)
     
     cheque_image = models.FileField(upload_to='cheques/', blank=True, null=True, help_text="Scanned copy of the cheque")
+    deposit_image = models.FileField(upload_to='deposits/', blank=True, null=True, help_text="Bank deposit slip")
     
     # Lifecycle Tracking
     cleared_date = models.DateField(null=True, blank=True)

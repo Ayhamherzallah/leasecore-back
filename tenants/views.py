@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import transaction
 from django.utils import timezone
-from .models import Tenant, Contract
+from .models import Tenant, Contract, TenantDocument
 from properties.models import Unit
 from .serializers import TenantSerializer, ContractSerializer
 
@@ -13,9 +13,87 @@ logger = logging.getLogger(__name__)
 class TenantViewSet(viewsets.ModelViewSet):
     """
     Standard ViewSet for managing Tenants.
+    Supports tax_number and multiple document uploads.
     """
     queryset = Tenant.objects.all()
     serializer_class = TenantSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        
+        # Handle Documents
+        documents = request.FILES.getlist('documents')
+        if documents:
+            tenant = serializer.instance
+            for file in documents:
+                TenantDocument.objects.create(tenant=tenant, document=file, description=file.name)
+             
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        if getattr(instance, '_prefetched_objects_cache', None):
+            # If 'prefetch_related' has been applied to a queryset, we need to
+            # forcibly invalidate the prefetch cache on the instance.
+            instance._prefetched_objects_cache = {}
+
+        # Handle New Documents (Append)
+        documents = request.FILES.getlist('documents')
+        if documents:
+            for file in documents:
+                TenantDocument.objects.create(tenant=instance, document=file, description=file.name)
+
+        return Response(serializer.data)
+    
+    def destroy(self, request, *args, **kwargs):
+        from django.db.models import ProtectedError
+        instance = self.get_object()
+        force = request.query_params.get('force', 'false') == 'true'
+        
+        try:
+            self.perform_destroy(instance)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except ProtectedError as e:
+            if not force:
+                 return Response({
+                    "error": "Cannot delete tenant because they have active contracts or invoices.",
+                    "protected": True,
+                    "detail": str(e)
+                 }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Force Delete Logic
+            try:
+                with transaction.atomic():
+                     # 1. Delete Payments associated with Invoices of this Tenant
+                     # Invoices are protected by Payments.
+                     # We iterate to be safe, or utilize related name
+                     
+                     # Get Invoices
+                     invoices = instance.invoices.all()
+                     for inv in invoices:
+                         # Delete payments (Cheques cascade)
+                         inv.payments.all().delete()
+                         inv.delete()
+                     
+                     # 2. Delete Contracts
+                     # Contracts protect Tenant.
+                     instance.contracts.all().delete()
+                     
+                     # 3. Delete Tenant
+                     instance.delete()
+                     
+                return Response(status=status.HTTP_204_NO_CONTENT)
+            except Exception as inner_e:
+                logger.error(f"Force delete failed: {inner_e}")
+                return Response({"error": f"Force delete failed: {str(inner_e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class ContractViewSet(viewsets.ModelViewSet):
     """
