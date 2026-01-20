@@ -251,22 +251,23 @@ def generate_invoice_pdf(invoice):
         c.setFont(font_name, 10 if not is_main else 12)
         c.drawRightString(width - 60, y, ar(label))
         
-        # Amount
+        # Amount and JOD positioning
         amount_color = GOLD if is_main else RED_ALERT if is_alert else GOLD_DARK
         c.setFillColor(amount_color)
         amount_font_size = 14 if is_main else 11
         c.setFont(font_name, amount_font_size)
         
-        # Calculate amount width to position JOD correctly
+        # Draw amount
         amount_str = f"{amount:,.2f}"
-        amount_x = width - 170
+        amount_x = width - 100  # Position for amount
         c.drawRightString(amount_x, y, amount_str)
         
-        # JOD - positioned to the left of the amount with spacing
+        # JOD - positioned to the RIGHT of the amount (after it)
         c.setFont(font_name, 8)
         c.setFillColor(GOLD_MEDIUM)
-        jod_x = amount_x - c.stringWidth(amount_str, font_name, amount_font_size) - 8
-        c.drawRightString(jod_x, y - 1, "JOD")
+        # Position JOD slightly to the right of where amount ends
+        jod_x = amount_x + 5
+        c.drawString(jod_x, y - 1, "JOD")
         
         return y - 22
     
