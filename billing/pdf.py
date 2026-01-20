@@ -14,22 +14,24 @@ from bidi.algorithm import get_display
 A4_WIDTH, A4_HEIGHT = A4
 
 def register_fonts():
-    """Helper to register fonts only once or safely."""
+    """Helper to register fonts. Enforces bundled font for production consistency."""
     font_name = 'Helvetica'
     try:
-        possible_fonts = [
-             os.path.join(settings.BASE_DIR, 'assets', 'fonts', 'Amiri-Regular.ttf'),
-             '/System/Library/Fonts/Supplemental/Arial.ttf',
-             '/Library/Fonts/Arial.ttf',
-             '/System/Library/Fonts/Arial.ttf',
-             '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-        ]
-        for path in possible_fonts:
-            if os.path.exists(path):
-                pdfmetrics.registerFont(TTFont('Arabic', path))
-                return 'Arabic'
-    except:
-        pass
+        # Strictly use the bundled project font to ensure it works on Railway (Linux)
+        # and doesn't silently fall back to a local Mac font that won't exist in prod.
+        font_path = os.path.join(settings.BASE_DIR, 'assets', 'fonts', 'Amiri-Regular.ttf')
+        
+        if os.path.exists(font_path):
+            pdfmetrics.registerFont(TTFont('Arabic', font_path))
+            return 'Arabic'
+        else:
+            # Fallback only if absolutely necessary (though we prefer this to fail in strict mode)
+            # checking common locations just in case, but usually we want to know if assets are missing
+            print(f"WARNING: Bundled font not found at {font_path}")
+            
+    except Exception as e:
+        print(f"Font registration error: {e}")
+        
     return font_name
 
 def arabic_text(text, font_name):
@@ -222,7 +224,7 @@ def generate_receipt_pdf(payment):
     # Receipt Number
     c.setFillColor(DARK)
     c.setFont(font_name, 16)
-    c.drawRightString(width - 40, height - 115, f"No. {payment.id:06d}")
+    c.drawRightString(width - 40, height - 115, f"Ref. {payment.reference_number}")
 
     # Separator
     c.setStrokeColor(GOLD)
@@ -294,7 +296,11 @@ def generate_receipt_pdf(payment):
     
     method_map_ar = {'CASH': 'نقد', 'CHECK': 'شيك', 'TRANSFER': 'تحويل', 'POS': 'شبكة'}
     ar_method = method_map_ar.get(payment.payment_method, "")
-    final_detail = f"{detail_str} / {ar(ar_method)}"
+    
+    if payment.payment_method == 'CASH':
+        final_detail = ar("نقد")
+    else:
+        final_detail = f"{detail_str} / {ar(ar_method)}"
     
     y = draw_field("Payment Method", "طريقة الدفع", final_detail, y)
     
@@ -312,7 +318,7 @@ def generate_receipt_pdf(payment):
     c.rect(width - 200, sig_y, 160, 50, stroke=1, fill=0)
     c.setFillColor(GOLD)
     c.setFont(font_name, 9)
-    c.drawCentredString(width - 120, sig_y - 12, "Authorized Signature / التوقيع")
+    c.drawCentredString(width - 120, sig_y - 12, f"Authorized Signature / {ar('التوقيع')}")
 
     # --- Footer ---
     footer_y = 30
