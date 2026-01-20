@@ -79,187 +79,215 @@ def generate_invoice_pdf(invoice):
     width, height = A4
     font_name = register_fonts()
     
-    def ar(t): return arabic_text(t, font_name)
+    def ar(t): 
+        """Properly handle Arabic text rendering"""
+        if not t:
+            return ""
+        text_str = str(t)
+        # Only apply reshaping to text that contains Arabic characters
+        if any('\u0600' <= char <= '\u06FF' for char in text_str):
+            return arabic_text(text_str, font_name)
+        return text_str
 
-    # --- Header ---
-    # Top Gold Strip
+    # --- Header Section ---
+    # Gold Top Bar
     c.setFillColor(GOLD)
-    c.rect(0, height - 15, width, 15, fill=1, stroke=0)
+    c.rect(0, height - 20, width, 20, fill=1, stroke=0)
 
-    # Logo (Left)
+    # Logo
     logo_path = os.path.join(settings.MEDIA_ROOT, 'AbuRakhiaLogo.png')
     if os.path.exists(logo_path):
-        c.drawImage(logo_path, 40, height - 110, width=120, height=90, preserveAspectRatio=True, mask='auto', anchor='sw')
+        c.drawImage(logo_path, 40, height - 120, width=130, height=95, preserveAspectRatio=True, mask='auto', anchor='sw')
 
-    # Status Tag (Top Right)
-    status_map = {
-        'PAID': ('PAID / خالص', GREEN_SUCCESS),
-        'PARTIALLY_PAID': ('PARTIAL / جزئي', GOLD),
-        'ISSUED': ('UNPAID / غير مدفوعة', RED_ALERT),
-        'DRAFT': ('DRAFT / مسودة', GRAY),
-        'OVERDUE': ('OVERDUE / متأخرة', RED_ALERT)
-    }
-    st_text, st_color = status_map.get(invoice.status, (invoice.status, GRAY))
-    
-    c.setStrokeColor(st_color)
-    c.setFillColor(st_color)
-    c.setLineWidth(1)
-    c.roundRect(width - 160, height - 60, 120, 28, 4, stroke=1, fill=0)
-    c.setFont(font_name, 10)
-    c.drawCentredString(width - 100, height - 50, ar(st_text))
-
-    # Title & Invoice Number (Right, below Status)
+    # Invoice Title (Right Side)
     c.setFillColor(DARK)
-    c.setFont(font_name, 22)
-    c.drawRightString(width - 40, height - 100, ar("فاتورة")) # Invoice
-    c.setFont(font_name, 12)
-    c.setFillColor(GRAY)
-    c.drawRightString(width - 40, height - 120, f"INVOICE #{invoice.invoice_number}")
-
-    # Separator Line
-    c.setStrokeColor(HexColor('#E0E0E0'))
-    c.setLineWidth(1)
-    c.line(40, height - 140, width - 40, height - 140)
-
-    # --- Info Section (Bill To & Dates) ---
-    y_start = height - 170
+    c.setFont(font_name, 28)
+    c.drawRightString(width - 40, height - 70, ar("فاتورة"))
     
-    # 1. Bill To (Left Side usually, but let's align styling)
-    c.setFillColor(GOLD)
-    c.setFont(font_name, 9)
-    c.drawString(40, y_start, ar("BILL TO / السيد"))
-    
-    c.setFillColor(DARK)
     c.setFont(font_name, 11)
-    tenant_name = invoice.tenant.name if invoice.tenant else "Cash Client"
-    c.drawString(40, y_start - 15, ar(tenant_name))
-    if invoice.tenant and invoice.tenant.phone:
+    c.setFillColor(GRAY)
+    c.drawRightString(width - 40, height - 90, "INVOICE")
+
+    # Invoice Number
+    c.setFillColor(GOLD)
+    c.setFont(font_name, 14)
+    c.drawRightString(width - 40, height - 115, f"#{invoice.invoice_number}")
+
+    # Status Badge
+    status_map = {
+        'PAID': ('مدفوعة', GREEN_SUCCESS),
+        'PARTIALLY_PAID': ('مدفوعة جزئياً', GOLD),
+        'ISSUED': ('صادرة', HexColor('#1976D2')),
+        'DRAFT': ('مسودة', GRAY),
+        'OVERDUE': ('متأخرة', RED_ALERT)
+    }
+    status_text, status_color = status_map.get(invoice.status, (invoice.status, GRAY))
+    
+    c.setFillColor(status_color)
+    c.roundRect(width - 140, height - 145, 100, 22, 3, stroke=0, fill=1)
+    c.setFillColor(colors.white)
+    c.setFont(font_name, 9)
+    c.drawCentredString(width - 90, height - 137, ar(status_text))
+
+    # Divider
+    c.setStrokeColor(HexColor('#EEEEEE'))
+    c.setLineWidth(1)
+    c.line(40, height - 165, width - 40, height - 165)
+
+    # --- Information Grid ---
+    y_info = height - 200
+    
+    # Right Column: Invoice Details
+    c.setFillColor(GOLD)
+    c.setFont(font_name, 8)
+    c.drawRightString(width - 40, y_info, ar("تفاصيل الفاتورة"))
+    
+    y_info -= 18
+    
+    # Helper for right-aligned info rows
+    def draw_right_info(y, label_ar, value):
         c.setFillColor(GRAY)
         c.setFont(font_name, 9)
-        c.drawString(40, y_start - 28, invoice.tenant.phone)
-
-    # 2. Dates & Type (Right Side - RTL Alignment)
-    # Move X slightly left of edge for labels
-    label_x = width - 40
-    value_x = width - 120
-    
-    row_gap = 14
-    
-    # Helper to draw Right-Aligned Field: [Label] : [Value]
-    def draw_info_row(y, label, value):
-        c.setFillColor(GOLD)
-        c.setFont(font_name, 9)
-        c.drawRightString(label_x, y, ar(label))
+        c.drawRightString(width - 40, y, ar(label_ar))
         
         c.setFillColor(DARK)
+        c.setFont(font_name, 10)
+        c.drawRightString(width - 130, y, str(value))
+        return y - 16
+    
+    y_info = draw_right_info(y_info, "تاريخ الإصدار:", invoice.issue_date)
+    y_info = draw_right_info(y_info, "تاريخ الاستحقاق:", invoice.due_date)
+    y_info = draw_right_info(y_info, "نوع الفاتورة:", ar(invoice.invoice_type))
+
+    # Left Column: Bill To
+    y_bill = height - 200
+    c.setFillColor(GOLD)
+    c.setFont(font_name, 8)
+    c.drawString(40, y_bill, ar("الفاتورة إلى"))
+    
+    y_bill -= 18
+    c.setFillColor(DARK)
+    c.setFont(font_name, 11)
+    tenant_name = invoice.tenant.name if invoice.tenant else "عميل نقدي"
+    c.drawString(40, y_bill, ar(tenant_name))
+    
+    if invoice.tenant and invoice.tenant.phone:
+        y_bill -= 14
+        c.setFillColor(GRAY)
         c.setFont(font_name, 9)
-        c.drawRightString(value_x, y, ar(str(value)))
+        c.drawString(40, y_bill, invoice.tenant.phone)
 
-    current_y = y_start
-    draw_info_row(current_y, "Issue Date / التاريخ", invoice.issue_date)
-    current_y -= row_gap
-    draw_info_row(current_y, "Due Date / الاستحقاق", invoice.due_date)
-    current_y -= row_gap
+    # --- Items Table ---
+    y_table = height - 320
     
-    # Invoice Type (Moved Here as requested)
-    # Translate type if possible or just show code
-    type_display = invoice.invoice_type
-    draw_info_row(current_y, "Type / نوع الفاتورة", type_display)
-
-    # --- Table Section ---
-    y_table_header = height - 260
-    
-    # Header Background
-    c.setFillColor(LIGHT_GRAY)
-    c.rect(40, y_table_header - 8, width - 80, 24, fill=1, stroke=0)
-    
-    # Header Text
-    # RTL Layout: Description on Right, Amount on Left
+    # Table Header
     c.setFillColor(DARK)
-    c.setFont(font_name, 10)
-    
-    # Right Side: Description
-    c.drawRightString(width - 60, y_table_header, ar("البيان / Description"))
-    
-    # Left Side: Amount
-    c.drawString(60, y_table_header, ar("المبلغ / Amount"))
-    
-    # Table Content
-    y_row = y_table_header - 30
-    
-    # Build Description Lines
-    desc_lines = []
-    if invoice.description:
-        desc_lines.append(invoice.description)
-    else:
-        # Fallback if no description
-        desc_lines.append(f"{invoice.invoice_type} Charge")
-        
-    if invoice.contract and invoice.contract.unit:
-         desc_lines.append(f"Unit {invoice.contract.unit.unit_number}")
-    
-    # Draw Content
-    c.setFont(font_name, 11)
-    c.setFillColor(DARK)
-    
-    # 1. Description (Right Aligned)
-    text_y = y_row
-    for line in desc_lines:
-        c.drawRightString(width - 60, text_y, ar(line))
-        text_y -= 15
-        
-    # 2. Amount (Left Aligned)
-    # Align roughly with first line of description
-    c.drawString(60, y_row, f"{invoice.total_amount:,.2f} JOD")
-    
-    # Row Separator
-    final_y = text_y - 10
-    c.setStrokeColor(HexColor('#F5F5F5'))
-    c.setLineWidth(1)
-    c.line(40, final_y, width - 40, final_y)
-    
-    # --- Totals ---
-    y_total = final_y - 30
-    
-    # Total Box
-    c.setFillColor(DARK)
-    c.setFont(font_name, 11)
-    c.drawString(60, y_total, ar("Total / المجموع"))
+    c.rect(40, y_table - 5, width - 80, 28, fill=1, stroke=0)
     
     c.setFillColor(GOLD)
-    c.setFont(font_name, 16)
-    c.drawRightString(200, y_total - 2, f"{invoice.total_amount:,.2f} JOD")
-    
-    # Paid Box
-    y_total -= 25
-    c.setFillColor(GRAY)
     c.setFont(font_name, 10)
-    c.drawString(60, y_total, ar("Paid / المدفوع"))
-    c.drawRightString(200, y_total, f"{invoice.paid_amount:,.2f} JOD")
+    # RTL: Description on right, Amount on left
+    c.drawRightString(width - 60, y_table + 5, ar("البيان"))
+    c.drawString(60, y_table + 5, ar("المبلغ"))
     
-    # Balance Box
+    # Table Row
+    y_row = y_table - 25
+    c.setFillColor(DARK)
+    c.setFont(font_name, 11)
+    
+    # Build description
+    desc_parts = []
+    if invoice.description:
+        desc_parts.append(invoice.description)
+    
+    if invoice.contract and invoice.contract.unit:
+        desc_parts.append(f"الوحدة {invoice.contract.unit.unit_number}")
+    
+    # Draw description (right-aligned)
+    desc_y = y_row
+    for part in desc_parts:
+        c.drawRightString(width - 60, desc_y, ar(part))
+        desc_y -= 16
+    
+    # Draw amount (left-aligned)
+    c.setFont(font_name, 12)
+    c.drawString(60, y_row, f"{invoice.total_amount:,.2f}")
+    c.setFont(font_name, 9)
+    c.setFillColor(GRAY)
+    c.drawString(60, y_row - 12, "JOD")
+    
+    # Bottom border
+    final_row_y = min(desc_y, y_row - 20)
+    c.setStrokeColor(HexColor('#EEEEEE'))
+    c.setLineWidth(0.5)
+    c.line(40, final_row_y - 10, width - 40, final_row_y - 10)
+
+    # --- Totals Section (Right-Aligned) ---
+    y_totals = final_row_y - 50
+    
+    # Create a totals box on the right
+    box_x = width - 250
+    box_width = 210
+    
+    # Background
+    c.setFillColor(HexColor('#FAFAFA'))
+    c.roundRect(box_x, y_totals - 80, box_width, 90, 5, stroke=0, fill=1)
+    
+    # Border
+    c.setStrokeColor(HexColor('#E0E0E0'))
+    c.setLineWidth(1)
+    c.roundRect(box_x, y_totals - 80, box_width, 90, 5, stroke=1, fill=0)
+    
+    y_total_line = y_totals - 15
+    
+    def draw_total_line(y, label, amount, is_main=False):
+        c.setFillColor(GRAY if not is_main else DARK)
+        c.setFont(font_name, 10 if not is_main else 12)
+        c.drawRightString(width - 60, y, ar(label))
+        
+        c.setFillColor(GOLD if is_main else DARK)
+        c.setFont(font_name, 14 if is_main else 11)
+        c.drawRightString(width - 170, y, f"{amount:,.2f}")
+        
+        c.setFont(font_name, 8)
+        c.setFillColor(GRAY)
+        c.drawRightString(width - 175, y - 1, "JOD")
+        
+        return y - 22
+    
+    y_total_line = draw_total_line(y_total_line, "المجموع:", invoice.total_amount, is_main=True)
+    
+    # Divider
+    c.setStrokeColor(HexColor('#E0E0E0'))
+    c.setLineWidth(0.5)
+    c.line(box_x + 10, y_total_line + 8, box_x + box_width - 10, y_total_line + 8)
+    
+    y_total_line = draw_total_line(y_total_line, "المدفوع:", invoice.paid_amount)
+    
     balance = invoice.total_amount - invoice.paid_amount
     if balance > 0:
-        y_total -= 25
+        # Highlight balance
         c.setFillColor(RED_ALERT)
-        c.setFont(font_name, 10)
-        c.drawString(60, y_total, ar("Balance / الباقي"))
-        c.drawRightString(200, y_total, f"{balance:,.2f} JOD")
+        c.setFont(font_name, 11)
+        c.drawRightString(width - 60, y_total_line, ar("المتبقي:"))
+        
+        c.setFillColor(RED_ALERT)
+        c.setFont(font_name, 14)
+        c.drawRightString(width - 170, y_total_line, f"{balance:,.2f}")
+        
+        c.setFont(font_name, 8)
+        c.drawRightString(width - 175, y_total_line - 1, "JOD")
 
     # --- Footer ---
-    footer_y = 40
-    c.setStrokeColor(GOLD) 
-    c.setLineWidth(1)
-    c.line(40, footer_y + 30, width - 40, footer_y + 30)
+    footer_y = 50
+    c.setStrokeColor(GOLD)
+    c.setLineWidth(1.5)
+    c.line(40, footer_y + 25, width - 40, footer_y + 25)
     
     c.setFillColor(GRAY)
     c.setFont(font_name, 8)
-    
-    # Footer Info
-    c.drawCentredString(width / 2, footer_y + 15, ar("Abu Rakhieh Plaza Property Management"))
-    
-    # Address in Footer to save space in header
-    c.drawCentredString(width / 2, footer_y + 5, ar("Amman, 7th Circle, Abdullah Ghosheh St."))
+    c.drawCentredString(width / 2, footer_y + 10, ar("أبو رخية بلازا - إدارة العقارات"))
+    c.drawCentredString(width / 2, footer_y, ar("عمان، الدوار السابع، شارع عبدالله غوشة"))
 
     c.showPage()
     c.save()
