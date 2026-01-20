@@ -44,6 +44,17 @@ class UtilityBillSerializer(serializers.ModelSerializer):
         model = UtilityBill
         fields = '__all__'
 
+class InvoiceListSerializer(serializers.ModelSerializer):
+    """
+    Lighter serializer for list view (no nested heavy objects).
+    """
+    tenant_name = serializers.CharField(source='tenant.name', read_only=True)
+    unit_name = serializers.CharField(source='contract.unit.unit_number', read_only=True, allow_null=True)
+    
+    class Meta:
+        model = Invoice
+        fields = ('id', 'invoice_number', 'invoice_type', 'status', 'issue_date', 'due_date', 'total_amount', 'paid_amount', 'tenant_name', 'unit_name', 'description')
+
 class InvoiceSerializer(serializers.ModelSerializer):
     """
     Standard CRUD serializer for Invoices.

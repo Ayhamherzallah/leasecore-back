@@ -52,11 +52,15 @@ def register_fonts():
 
 def arabic_text(text, font_name):
     """Reshapes Arabic text for PDF."""
-    # Always reshape/bidi, even if font fallback occurred.
-    # This prevents 'reversed' text (logical order) on fallback fonts.
     try:
+        # 1. Reshape characters (connect letters)
         reshaped = arabic_reshaper.reshape(text)
-        return get_display(reshaped)
+        # 2. Reorder for RTL display (Bidi)
+        # Note: ReportLab draws strings LTR by default. 
+        # get_display reverses it to visual order which ReportLab renders "correctly" from right to left if we draw it that way?
+        # Actually, get_display makes it so if you print it LTR, it looks RTL.
+        bidi_text = get_display(reshaped)
+        return bidi_text
     except:
         return text
 
@@ -102,23 +106,29 @@ def generate_invoice_pdf(invoice):
     c.setLineWidth(1)
     c.roundRect(width - 160, height - 60, 120, 30, 4, stroke=1, fill=0)
     c.setFont(font_name, 11)
+    
+    # Status Text is typically English/Arabic pair.
+    # ar() handles the arabic part if mixed, or we can just pass it through.
+    # However, mixed English/Arabic needs care. 
+    # Usually better to separate or ensure ar() handles mixed content if configured.
+    # For now, simplistic approach:
     c.drawCentredString(width - 100, height - 50, ar(st_text))
 
-    # Company Info (Left under logo)
+    # Company Info (Left under logo) WITHOUT PHONE
     y_info = height - 110
     c.setFillColor(GRAY)
     c.setFont(font_name, 9)
     c.drawString(45, y_info, "Abu Rakhieh Plaza - Amman")
     c.drawString(45, y_info - 12, "7th Circle, Abdullah Ghosheh St.")
-    c.drawString(45, y_info - 24, "+962 77 50 000 95")
+    # c.drawString(45, y_info - 24, "+962 77 50 000 95") # REMOVED
 
     # Title & Number (Right)
     c.setFillColor(DARK)
     c.setFont(font_name, 24)
-    c.drawRightString(width - 40, height - 100, ar("فاتورة ضريبية"))
+    c.drawRightString(width - 40, height - 100, ar("فاتورة")) # Was فاتورة ضريبية
     c.setFont(font_name, 14)
     c.setFillColor(GOLD)
-    c.drawRightString(width - 40, height - 120, f"TAX INVOICE #{invoice.invoice_number}")
+    c.drawRightString(width - 40, height - 120, f"INVOICE #{invoice.invoice_number}") # Tax Invoice -> Invoice
 
     # Separator
     c.setStrokeColor(HexColor('#E0E0E0'))
@@ -131,7 +141,7 @@ def generate_invoice_pdf(invoice):
     # Bill To
     c.setFillColor(GOLD)
     c.setFont(font_name, 9)
-    c.drawString(40, y, "BILL TO / السيد")
+    c.drawString(40, y, ar("BILL TO / السيد"))
     
     c.setFillColor(DARK)
     c.setFont(font_name, 12)
@@ -142,7 +152,7 @@ def generate_invoice_pdf(invoice):
     # Dates
     c.setFillColor(GOLD)
     c.setFont(font_name, 9)
-    c.drawRightString(width - 40, y, "DATES / التواريخ")
+    c.drawRightString(width - 40, y, ar("DATES / التواريخ"))
     
     c.setFillColor(DARK)
     c.setFont(font_name, 10)
@@ -166,27 +176,40 @@ def generate_invoice_pdf(invoice):
     c.setFillColor(DARK)
     c.setFont(font_name, 11)
     
-    invoice_type_map = {
-        'RENT': 'Rent Payment / دفعة إيجار',
-        'UTILITY': 'Utilities / خدمات',
-        'SERVICE': 'Service Fee / رسوم خدمات',
-        'PENALTY': 'Penalty / غرامة'
-    }
-    desc_text = invoice_type_map.get(invoice.invoice_type, 'Service')
-    if invoice.contract and invoice.contract.unit:
-        desc_text += f" - Unit {invoice.contract.unit.unit_number}"
+    # Description Logic
+    # 1. Invoice Type
+    # 2. Custom Description
+    # 3. Unit Info
+    
+    type_text = invoice.invoice_type
+    
+    # Build description lines
+    lines = []
+    lines.append(type_text) # e.g. "RENT" or Custom Type
+    
+    if invoice.description:
+        lines.append(invoice.description)
         
-    c.drawString(50, y, ar(desc_text))
+    if invoice.contract and invoice.contract.unit:
+         lines.append(f"Unit {invoice.contract.unit.unit_number}")
+         
+    # Draw Lines
+    text_y = y
+    for line in lines:
+        c.drawString(50, text_y, ar(line))
+        text_y -= 15
+        
+    # Amount (Top aligned with first line of desc)
     c.drawRightString(width - 50, y, f"{invoice.total_amount:,.2f} JOD")
     
     c.setStrokeColor(HexColor('#F0F0F0'))
-    c.line(40, y - 12, width - 40, y - 12)
+    c.line(40, text_y - 5, width - 40, text_y - 5)
 
     # --- Totals ---
-    y -= 50
+    y = text_y - 40
     c.setFillColor(DARK)
     c.setFont(font_name, 11)
-    c.drawRightString(width - 150, y, "Total / المجموع")
+    c.drawRightString(width - 150, y, ar("Total / المجموع"))
     
     c.setFillColor(GOLD)
     c.setFont(font_name, 16)
@@ -248,13 +271,13 @@ def generate_receipt_pdf(payment):
     c.setLineWidth(1)
     c.line(40, height - 140, width - 40, height - 140)
 
-    # Contact Info
+    # Contact Info WITHOUT PHONE
     y_info = height - 110
     c.setFillColor(GRAY)
     c.setFont(font_name, 9)
     c.drawString(160, y_info, "Abu Rakhieh Plaza")
     c.drawString(160, y_info - 12, "Amman, 7th Circle")
-    c.drawString(160, y_info - 24, "+962 77 50 000 95")
+    # c.drawString(160, y_info - 24, "+962 77 50 000 95") # REMOVED
 
     # --- Body Fields ---
     y = height - 190
@@ -384,14 +407,14 @@ def generate_expense_pdf(expense):
     c.setLineWidth(1)
     c.line(40, height - 140, width - 40, height - 140)
 
-    # Contact Info
+    # Contact Info WITHOUT PHONE
     y_info = height - 110
     c.setFillColor(GRAY)
     c.setFont(font_name, 9)
     # Align with receipt style (indented from logo)
     c.drawString(160, y_info, "Abu Rakhieh Plaza")
     c.drawString(160, y_info - 12, "Amman, 7th Circle")
-    c.drawString(160, y_info - 24, "+962 77 50 000 95")
+    # c.drawString(160, y_info - 24, "+962 77 50 000 95")
 
     # --- Body Fields ---
     y = height - 190

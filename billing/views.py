@@ -5,7 +5,7 @@ from django.http import HttpResponse
 import io
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import Invoice, Payment, Cheque, InvoiceType
-from .serializers import InvoiceSerializer, PaymentSerializer, ChequeSerializer, InvoiceTypeSerializer
+from .serializers import InvoiceSerializer, InvoiceListSerializer, PaymentSerializer, ChequeSerializer, InvoiceTypeSerializer
 from .services import BillingService
 from .pdf import generate_invoice_pdf, generate_receipt_pdf
 from users.permissions import CanPerformFinancialCommand
@@ -74,11 +74,15 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     - DELETE (Void/Reverse Accounting)
     - PUT/PATCH (Update dates/details)
     """
-    queryset = Invoice.objects.all().order_by('-issue_date', '-id')
-    serializer_class = InvoiceSerializer
+    queryset = Invoice.objects.select_related('tenant', 'contract', 'contract__unit').all().order_by('-issue_date', '-id')
     permission_classes = [CanPerformFinancialCommand]
     filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['tenant', 'status', 'contract', 'invoice_number']
+    filterset_fields = ['tenant', 'status', 'contract', 'invoice_number', 'invoice_type']
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return InvoiceListSerializer
+        return InvoiceSerializer
 
     def perform_destroy(self, instance):
         """

@@ -31,6 +31,7 @@ class Invoice(models.Model):
     invoice_number = models.CharField(max_length=50, unique=True, db_index=True)
     # Changed: Removed choices=... to allow dynamic strings from InvoiceType model
     invoice_type = models.CharField(max_length=50) 
+    description = models.CharField(max_length=255, blank=True, help_text="Custom description for the PDF (Description / البيان)")
     issue_date = models.DateField(db_index=True)
     due_date = models.DateField(db_index=True)
     
