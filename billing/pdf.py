@@ -199,7 +199,8 @@ def generate_invoice_pdf(invoice):
     # Build description with smart defaults
     desc_parts = []
     
-    if invoice.description:
+    # Check if description exists and is not empty
+    if invoice.description and invoice.description.strip():
         # User provided custom description
         desc_parts.append(invoice.description)
     else:
