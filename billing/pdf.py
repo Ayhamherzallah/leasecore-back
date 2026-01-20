@@ -89,6 +89,10 @@ def generate_invoice_pdf(invoice):
             return arabic_text(text_str, font_name)
         return text_str
 
+    # Updated Professional Color Palette (No Black/Dark Gray)
+    NAVY = HexColor('#2C3E50')  # Soft navy instead of black
+    SLATE = HexColor('#546E7A')  # Medium slate instead of dark gray
+    
     # --- Header Section ---
     # Gold Top Bar
     c.setFillColor(GOLD)
@@ -100,12 +104,12 @@ def generate_invoice_pdf(invoice):
         c.drawImage(logo_path, 40, height - 120, width=130, height=95, preserveAspectRatio=True, mask='auto', anchor='sw')
 
     # Invoice Title (Right Side)
-    c.setFillColor(DARK)
+    c.setFillColor(NAVY)
     c.setFont(font_name, 28)
     c.drawRightString(width - 40, height - 70, ar("فاتورة"))
     
     c.setFont(font_name, 11)
-    c.setFillColor(GRAY)
+    c.setFillColor(SLATE)
     c.drawRightString(width - 40, height - 90, "INVOICE")
 
     # Invoice Number
@@ -118,10 +122,10 @@ def generate_invoice_pdf(invoice):
         'PAID': ('مدفوعة', GREEN_SUCCESS),
         'PARTIALLY_PAID': ('مدفوعة جزئياً', GOLD),
         'ISSUED': ('صادرة', HexColor('#1976D2')),
-        'DRAFT': ('مسودة', GRAY),
+        'DRAFT': ('مسودة', SLATE),
         'OVERDUE': ('متأخرة', RED_ALERT)
     }
-    status_text, status_color = status_map.get(invoice.status, (invoice.status, GRAY))
+    status_text, status_color = status_map.get(invoice.status, (invoice.status, SLATE))
     
     c.setFillColor(status_color)
     c.roundRect(width - 140, height - 145, 100, 22, 3, stroke=0, fill=1)
@@ -146,11 +150,11 @@ def generate_invoice_pdf(invoice):
     
     # Helper for right-aligned info rows
     def draw_right_info(y, label_ar, value):
-        c.setFillColor(GRAY)
+        c.setFillColor(SLATE)
         c.setFont(font_name, 9)
         c.drawRightString(width - 40, y, ar(label_ar))
         
-        c.setFillColor(DARK)
+        c.setFillColor(NAVY)
         c.setFont(font_name, 10)
         c.drawRightString(width - 130, y, str(value))
         return y - 16
@@ -159,29 +163,25 @@ def generate_invoice_pdf(invoice):
     y_info = draw_right_info(y_info, "تاريخ الاستحقاق:", invoice.due_date)
     y_info = draw_right_info(y_info, "نوع الفاتورة:", ar(invoice.invoice_type))
 
-    # Left Column: Bill To
+    # Left Column: Bill To (WITHOUT PHONE)
     y_bill = height - 200
     c.setFillColor(GOLD)
     c.setFont(font_name, 8)
     c.drawString(40, y_bill, ar("الفاتورة إلى"))
     
     y_bill -= 18
-    c.setFillColor(DARK)
+    c.setFillColor(NAVY)
     c.setFont(font_name, 11)
     tenant_name = invoice.tenant.name if invoice.tenant else "عميل نقدي"
     c.drawString(40, y_bill, ar(tenant_name))
     
-    if invoice.tenant and invoice.tenant.phone:
-        y_bill -= 14
-        c.setFillColor(GRAY)
-        c.setFont(font_name, 9)
-        c.drawString(40, y_bill, invoice.tenant.phone)
+    # REMOVED: Phone number display to avoid reversed text issue
 
     # --- Items Table ---
-    y_table = height - 320
+    y_table = height - 300
     
-    # Table Header
-    c.setFillColor(DARK)
+    # Table Header (Using Navy instead of Black)
+    c.setFillColor(NAVY)
     c.rect(40, y_table - 5, width - 80, 28, fill=1, stroke=0)
     
     c.setFillColor(GOLD)
@@ -192,7 +192,7 @@ def generate_invoice_pdf(invoice):
     
     # Table Row
     y_row = y_table - 25
-    c.setFillColor(DARK)
+    c.setFillColor(NAVY)
     c.setFont(font_name, 11)
     
     # Build description
@@ -209,12 +209,15 @@ def generate_invoice_pdf(invoice):
         c.drawRightString(width - 60, desc_y, ar(part))
         desc_y -= 16
     
-    # Draw amount (left-aligned)
+    # Draw amount (left-aligned) - Fixed positioning
     c.setFont(font_name, 12)
+    c.setFillColor(NAVY)
     c.drawString(60, y_row, f"{invoice.total_amount:,.2f}")
     c.setFont(font_name, 9)
-    c.setFillColor(GRAY)
-    c.drawString(60, y_row - 12, "JOD")
+    c.setFillColor(SLATE)
+    # Position JOD after the number with proper spacing
+    amount_width = c.stringWidth(f"{invoice.total_amount:,.2f}", font_name, 12)
+    c.drawString(60 + amount_width + 5, y_row, "JOD")
     
     # Bottom border
     final_row_y = min(desc_y, y_row - 20)
@@ -240,18 +243,29 @@ def generate_invoice_pdf(invoice):
     
     y_total_line = y_totals - 15
     
-    def draw_total_line(y, label, amount, is_main=False):
-        c.setFillColor(GRAY if not is_main else DARK)
+    def draw_total_line(y, label, amount, is_main=False, is_alert=False):
+        # Label
+        label_color = SLATE if not is_main and not is_alert else NAVY if is_main else RED_ALERT
+        c.setFillColor(label_color)
         c.setFont(font_name, 10 if not is_main else 12)
         c.drawRightString(width - 60, y, ar(label))
         
-        c.setFillColor(GOLD if is_main else DARK)
-        c.setFont(font_name, 14 if is_main else 11)
-        c.drawRightString(width - 170, y, f"{amount:,.2f}")
+        # Amount
+        amount_color = GOLD if is_main else RED_ALERT if is_alert else NAVY
+        c.setFillColor(amount_color)
+        amount_font_size = 14 if is_main else 11
+        c.setFont(font_name, amount_font_size)
         
+        # Calculate amount width to position JOD correctly
+        amount_str = f"{amount:,.2f}"
+        amount_x = width - 170
+        c.drawRightString(amount_x, y, amount_str)
+        
+        # JOD - positioned to the left of the amount with spacing
         c.setFont(font_name, 8)
-        c.setFillColor(GRAY)
-        c.drawRightString(width - 175, y - 1, "JOD")
+        c.setFillColor(SLATE)
+        jod_x = amount_x - c.stringWidth(amount_str, font_name, amount_font_size) - 8
+        c.drawRightString(jod_x, y - 1, "JOD")
         
         return y - 22
     
@@ -266,17 +280,7 @@ def generate_invoice_pdf(invoice):
     
     balance = invoice.total_amount - invoice.paid_amount
     if balance > 0:
-        # Highlight balance
-        c.setFillColor(RED_ALERT)
-        c.setFont(font_name, 11)
-        c.drawRightString(width - 60, y_total_line, ar("المتبقي:"))
-        
-        c.setFillColor(RED_ALERT)
-        c.setFont(font_name, 14)
-        c.drawRightString(width - 170, y_total_line, f"{balance:,.2f}")
-        
-        c.setFont(font_name, 8)
-        c.drawRightString(width - 175, y_total_line - 1, "JOD")
+        y_total_line = draw_total_line(y_total_line, "المتبقي:", balance, is_alert=True)
 
     # --- Footer ---
     footer_y = 50
@@ -284,7 +288,7 @@ def generate_invoice_pdf(invoice):
     c.setLineWidth(1.5)
     c.line(40, footer_y + 25, width - 40, footer_y + 25)
     
-    c.setFillColor(GRAY)
+    c.setFillColor(SLATE)
     c.setFont(font_name, 8)
     c.drawCentredString(width / 2, footer_y + 10, ar("أبو رخية بلازا - إدارة العقارات"))
     c.drawCentredString(width / 2, footer_y, ar("عمان، الدوار السابع، شارع عبدالله غوشة"))
