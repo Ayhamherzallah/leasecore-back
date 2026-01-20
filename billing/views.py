@@ -167,7 +167,11 @@ class PaymentViewSet(mixins.CreateModelMixin,
         POST /api/billing/payments/
         Strict delegation to BillingService.receive_payment
         """
-        data = request.data.copy()
+        # Don't use .copy() on request.data to avoid deepcopy of file objects
+        # Instead, build a new dict manually
+        data = {}
+        for key in request.data.keys():
+            data[key] = request.data.get(key)
         
         # Helper: Restructure flat FormData fields into nested cheque_details for Serializer
         if data.get('payment_method') == 'CHECK':

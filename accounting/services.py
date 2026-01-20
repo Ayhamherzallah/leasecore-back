@@ -70,12 +70,27 @@ class AccountingService:
         if cls._entries_exist(invoice):
             return # Idempotency check: Already booked.
 
-        # Strict Building Context
-        if not invoice.contract:
-            # We enforce that all invoices MUST come from a contract context for now
-            raise ValueError(f"Accounting Error: Invoice {invoice.invoice_number} has no linked Contract. Cannot determine Building context.")
+        # Building Context - with fallback for invoices without contracts (e.g., Knowledge Tax)
+        building = None
+        if invoice.contract and invoice.contract.unit:
+            building = invoice.contract.unit.floor.building
+        else:
+            # Fallback 1: Try to get building from tenant's active contract
+            from tenants.models import Contract
+            active_contract = Contract.objects.filter(
+                tenant=invoice.tenant, 
+                status='ACTIVE'
+            ).select_related('unit__floor__building').first()
             
-        building = invoice.contract.unit.floor.building
+            if active_contract and active_contract.unit:
+                building = active_contract.unit.floor.building
+            else:
+                # Fallback 2: Use the first building in the system
+                from properties.models import Building
+                building = Building.objects.first()
+                
+            if not building:
+                raise ValueError(f"Accounting Error: Invoice {invoice.invoice_number} has no linked Contract and no fallback Building found.")
         
         # In Cash Basis model, issuance is: Dr AR, Cr Unearned Revenue (Liability)
         # We do NOT book Income yet.
@@ -115,11 +130,27 @@ class AccountingService:
             return # Idempotency check
 
         invoice = payment.invoice
-        # Building context derived from invoice
-        if not invoice.contract:
-             raise ValueError(f"Accounting Error: Payment {payment.reference_number} linked to Invoice {invoice.invoice_number} with no Contract. Cannot determine Building.")
-
-        building = invoice.contract.unit.floor.building
+        # Building context - with fallback for invoices without contracts
+        building = None
+        if invoice.contract and invoice.contract.unit:
+            building = invoice.contract.unit.floor.building
+        else:
+            # Fallback 1: Try to get building from tenant's active contract
+            from tenants.models import Contract
+            active_contract = Contract.objects.filter(
+                tenant=invoice.tenant, 
+                status='ACTIVE'
+            ).select_related('unit__floor__building').first()
+            
+            if active_contract and active_contract.unit:
+                building = active_contract.unit.floor.building
+            else:
+                # Fallback 2: Use the first building in the system
+                from properties.models import Building
+                building = Building.objects.first()
+                
+            if not building:
+                raise ValueError(f"Accounting Error: Payment for Invoice {invoice.invoice_number} has no linked Contract and no fallback Building found.")
 
         # Determine Specific Revenue Account based on Invoice Type
         revenue_account = "Rental Income"
@@ -185,7 +216,23 @@ class AccountingService:
         """
         payment = cheque.payment
         invoice = payment.invoice
-        building = invoice.contract.unit.floor.building
+        
+        # Building context - with fallback
+        building = None
+        if invoice.contract and invoice.contract.unit:
+            building = invoice.contract.unit.floor.building
+        else:
+            from tenants.models import Contract
+            active_contract = Contract.objects.filter(
+                tenant=invoice.tenant, 
+                status='ACTIVE'
+            ).select_related('unit__floor__building').first()
+            
+            if active_contract and active_contract.unit:
+                building = active_contract.unit.floor.building
+            else:
+                from properties.models import Building
+                building = Building.objects.first()
         
         # Determine Revenue Account
         revenue_account = "Rental Income"
@@ -240,7 +287,23 @@ class AccountingService:
         """
         payment = cheque.payment
         invoice = payment.invoice
-        building = invoice.contract.unit.floor.building
+        
+        # Building context - with fallback
+        building = None
+        if invoice.contract and invoice.contract.unit:
+            building = invoice.contract.unit.floor.building
+        else:
+            from tenants.models import Contract
+            active_contract = Contract.objects.filter(
+                tenant=invoice.tenant, 
+                status='ACTIVE'
+            ).select_related('unit__floor__building').first()
+            
+            if active_contract and active_contract.unit:
+                building = active_contract.unit.floor.building
+            else:
+                from properties.models import Building
+                building = Building.objects.first()
 
         entries = [
             # Reverse the initial receipt

@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.db.models import Sum, Q, Count
 from decimal import Decimal
 from .models import Invoice
-from expenses.models import Expense, ExpenseCategory
+from expenses.models import Expense
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -20,9 +20,10 @@ def knowledge_tax_report(request):
     - Payment status
     """
     
-    # Get date range from query params (optional)
+    # Get date range and search from query params (optional)
     from_date = request.query_params.get('from_date')
     to_date = request.query_params.get('to_date')
+    search = request.query_params.get('search', '').strip()
     
     # Base queryset for invoices with knowledge tax
     invoice_qs = Invoice.objects.filter(knowledge_tax_amount__gt=0)
@@ -31,14 +32,21 @@ def knowledge_tax_report(request):
         invoice_qs = invoice_qs.filter(issue_date__gte=from_date)
     if to_date:
         invoice_qs = invoice_qs.filter(issue_date__lte=to_date)
+    if search:
+        invoice_qs = invoice_qs.filter(
+            Q(tenant__name__icontains=search) |
+            Q(contract__unit__unit_number__icontains=search) |
+            Q(invoice_number__icontains=search)
+        )
     
     # Calculate totals from invoices
-    # Collected from tenants = Knowledge Tax on Paid/Partially Paid invoices
+    # FIXED: Count invoices that have received payments (paid_amount > 0) OR have PAID/PARTIALLY_PAID status
+    # This ensures we count collected taxes even if status wasn't properly updated
     invoice_stats = invoice_qs.aggregate(
         total_billed=Sum('knowledge_tax_amount'),
-        total_collected=Sum('knowledge_tax_amount', filter=Q(status__in=['PAID', 'PARTIALLY_PAID'])),
-        count_paid=Count('id', filter=Q(status__in=['PAID', 'PARTIALLY_PAID'])),
-        count_unpaid=Count('id', filter=Q(status='ISSUED'))
+        total_collected=Sum('knowledge_tax_amount', filter=Q(paid_amount__gt=0) | Q(status__in=['PAID', 'PARTIALLY_PAID'])),
+        count_paid=Count('id', filter=Q(paid_amount__gt=0) | Q(status__in=['PAID', 'PARTIALLY_PAID'])),
+        count_unpaid=Count('id', filter=Q(paid_amount=0) & ~Q(status__in=['PAID', 'PARTIALLY_PAID']))
     )
     
     # Get expenses for knowledge tax payments
@@ -64,14 +72,14 @@ def knowledge_tax_report(request):
         'contract__unit__floor__name'
     ).annotate(
         total_tax=Sum('knowledge_tax_amount'),
-        paid_tax=Sum('knowledge_tax_amount', filter=Q(status__in=['PAID', 'PARTIALLY_PAID'])),
-        unpaid_tax=Sum('knowledge_tax_amount', filter=Q(status='ISSUED'))
+        paid_tax=Sum('knowledge_tax_amount', filter=Q(paid_amount__gt=0) | Q(status__in=['PAID', 'PARTIALLY_PAID'])),
+        unpaid_tax=Sum('knowledge_tax_amount', filter=Q(paid_amount=0) & ~Q(status__in=['PAID', 'PARTIALLY_PAID']))
     ).order_by('-total_tax')
     
-    # Recent invoices with knowledge tax
+    # Recent invoices with knowledge tax - include unit number from contract
     recent_invoices = invoice_qs.select_related(
-        'tenant', 'contract__unit'
-    ).order_by('-issue_date')[:20].values(
+        'tenant', 'contract', 'contract__unit'
+    ).order_by('-issue_date')[:50].values(
         'id',
         'invoice_number',
         'tenant__name',
@@ -79,7 +87,9 @@ def knowledge_tax_report(request):
         'issue_date',
         'knowledge_tax_amount',
         'knowledge_tax_paid',
-        'knowledge_tax_paid_date'
+        'knowledge_tax_paid_date',
+        'paid_amount',
+        'status'
     )
     
     # Recent expenses

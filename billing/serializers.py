@@ -71,3 +71,18 @@ class InvoiceSerializer(serializers.ModelSerializer):
         model = Invoice
         fields = '__all__'
         read_only_fields = ('status', 'paid_amount', 'invoice_number') # Managed by system
+
+    def validate(self, attrs):
+        """
+        Ensure knowledge tax invoices have a linked contract/unit.
+        """
+        knowledge_tax_amount = attrs.get('knowledge_tax_amount', 0)
+        contract = attrs.get('contract')
+        
+        # If this is a knowledge tax invoice (has knowledge_tax_amount > 0), require a contract
+        if knowledge_tax_amount and float(knowledge_tax_amount) > 0 and not contract:
+            raise serializers.ValidationError({
+                'contract': 'يجب اختيار العقد/الوحدة لفواتير ضريبة المعارف / A contract/unit is required for knowledge tax invoices.'
+            })
+        
+        return attrs
