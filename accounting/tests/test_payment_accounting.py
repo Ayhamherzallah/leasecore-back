@@ -16,7 +16,7 @@ class PaymentAccountingTest(ReferenceTestCase):
             contract=self.contract,
             tenant=self.tenant,
             invoice_number="INV-001",
-            invoice_type=Invoice.InvoiceType.RENT,
+            invoice_type=Invoice.InvoiceTypeChoices.RENT,
             issue_date=timezone.now().date(),
             due_date=timezone.now().date(),
             total_amount=Decimal('5000.00'),
