@@ -17,17 +17,33 @@ def register_fonts():
     """Helper to register fonts. Enforces bundled font for production consistency."""
     font_name = 'Helvetica'
     try:
-        # Strictly use the bundled project font to ensure it works on Railway (Linux)
-        # and doesn't silently fall back to a local Mac font that won't exist in prod.
-        font_path = os.path.join(settings.BASE_DIR, 'assets', 'fonts', 'Amiri-Regular.ttf')
+        # Try multiple strategies to find the font asset
+        possible_paths = []
         
-        if os.path.exists(font_path):
+        # 1. Django BASE_DIR (Standard)
+        possible_paths.append(os.path.join(settings.BASE_DIR, 'assets', 'fonts', 'Amiri-Regular.ttf'))
+        
+        # 2. Relative to this file (Reliable independent of CWD/Settings)
+        # file is in backend/billing/pdf.py
+        # assets is in backend/assets/
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        backend_dir = os.path.dirname(current_dir)
+        possible_paths.append(os.path.join(backend_dir, 'assets', 'fonts', 'Amiri-Regular.ttf'))
+        
+        # 3. CWD fallback
+        possible_paths.append(os.path.join(os.getcwd(), 'assets', 'fonts', 'Amiri-Regular.ttf'))
+        
+        font_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                font_path = path
+                break
+        
+        if font_path:
             pdfmetrics.registerFont(TTFont('Arabic', font_path))
             return 'Arabic'
         else:
-            # Fallback only if absolutely necessary (though we prefer this to fail in strict mode)
-            # checking common locations just in case, but usually we want to know if assets are missing
-            print(f"WARNING: Bundled font not found at {font_path}")
+            print(f"WARNING: Bundled font not found. Searched: {possible_paths}")
             
     except Exception as e:
         print(f"Font registration error: {e}")
@@ -36,7 +52,8 @@ def register_fonts():
 
 def arabic_text(text, font_name):
     """Reshapes Arabic text for PDF."""
-    if font_name != 'Arabic': return text
+    # Always reshape/bidi, even if font fallback occurred.
+    # This prevents 'reversed' text (logical order) on fallback fonts.
     try:
         reshaped = arabic_reshaper.reshape(text)
         return get_display(reshaped)
