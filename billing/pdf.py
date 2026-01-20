@@ -196,11 +196,26 @@ def generate_invoice_pdf(invoice):
     c.setFillColor(GOLD_DARK)
     c.setFont(font_name, 11)
     
-    # Build description
+    # Build description with smart defaults
     desc_parts = []
-    if invoice.description:
-        desc_parts.append(invoice.description)
     
+    if invoice.description:
+        # User provided custom description
+        desc_parts.append(invoice.description)
+    else:
+        # Generate default description based on invoice type
+        type_descriptions = {
+            'RENT': 'إيجار شهري',
+            'UTILITY': 'فواتير خدمات',
+            'SERVICE': 'رسوم خدمة',
+            'PENALTY': 'غرامة تأخير'
+        }
+        
+        # Get description for invoice type (default to type name if not in map)
+        default_desc = type_descriptions.get(invoice.invoice_type, invoice.invoice_type)
+        desc_parts.append(default_desc)
+    
+    # Add unit information if available
     if invoice.contract and invoice.contract.unit:
         desc_parts.append(f"الوحدة {invoice.contract.unit.unit_number}")
     
