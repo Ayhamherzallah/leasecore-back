@@ -33,16 +33,19 @@ def knowledge_tax_report(request):
         invoice_qs = invoice_qs.filter(issue_date__lte=to_date)
     
     # Calculate totals from invoices
+    # Collected from tenants = Knowledge Tax on Paid/Partially Paid invoices
     invoice_stats = invoice_qs.aggregate(
         total_billed=Sum('knowledge_tax_amount'),
-        total_collected=Sum('knowledge_tax_amount', filter=Q(knowledge_tax_paid=True)),
-        count_paid=Count('id', filter=Q(knowledge_tax_paid=True)),
-        count_unpaid=Count('id', filter=Q(knowledge_tax_paid=False))
+        total_collected=Sum('knowledge_tax_amount', filter=Q(status__in=['PAID', 'PARTIALLY_PAID'])),
+        count_paid=Count('id', filter=Q(status__in=['PAID', 'PARTIALLY_PAID'])),
+        count_unpaid=Count('id', filter=Q(status='ISSUED'))
     )
     
     # Get expenses for knowledge tax payments
+    # Search for categories containing "Knowledge" or "معارف"
     expense_qs = Expense.objects.filter(
-        category__name='Knowledge Tax'
+        Q(category__name__icontains='Knowledge') | 
+        Q(category__name__icontains='معارف')
     )
     
     if from_date:
@@ -61,8 +64,8 @@ def knowledge_tax_report(request):
         'contract__unit__floor__name'
     ).annotate(
         total_tax=Sum('knowledge_tax_amount'),
-        paid_tax=Sum('knowledge_tax_amount', filter=Q(knowledge_tax_paid=True)),
-        unpaid_tax=Sum('knowledge_tax_amount', filter=Q(knowledge_tax_paid=False))
+        paid_tax=Sum('knowledge_tax_amount', filter=Q(status__in=['PAID', 'PARTIALLY_PAID'])),
+        unpaid_tax=Sum('knowledge_tax_amount', filter=Q(status='ISSUED'))
     ).order_by('-total_tax')
     
     # Recent invoices with knowledge tax
