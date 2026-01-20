@@ -353,75 +353,108 @@ def generate_expense_pdf(expense):
     c = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
     font_name = register_fonts()
+    
     def ar(t): return arabic_text(t, font_name)
 
-    # Header
-    c.setFillColor(DARK) 
-    c.rect(0, height - 140, width, 140, fill=1, stroke=0)
-    
+    # --- Top Bar ---
     c.setFillColor(GOLD)
-    c.rect(0, height - 145, width, 5, fill=1, stroke=0)
+    c.rect(0, height - 12, width, 12, fill=1, stroke=0)
+
+    # --- Header ---
+    logo_path = os.path.join(settings.MEDIA_ROOT, 'AbuRakhiaLogo.png')
+    if os.path.exists(logo_path):
+        c.drawImage(logo_path, 40, height - 100, width=110, height=80, preserveAspectRatio=True, mask='auto', anchor='sw')
 
     # Title
+    c.setFillColor(DARK)
+    c.setFont(font_name, 26)
+    c.drawRightString(width - 40, height - 70, ar("سـنـد صـرف"))
+    c.setFont(font_name, 11)
     c.setFillColor(GOLD)
-    c.setFont(font_name, 32)
-    c.drawRightString(width - 50, height - 70, ar("أبـو رخيـة بـلازا"))
-    
-    c.setFillColor(colors.white)
-    c.setFont(font_name, 14)
-    c.drawRightString(width - 50, height - 100, ar("إدارة العقارات والاستثمارات"))
+    c.drawRightString(width - 40, height - 90, "EXPENSE VOUCHER")
 
-    # Voucher Label
-    c.setFillColor(colors.white)
-    c.setFont(font_name, 24)
-    c.drawString(50, height - 70, ar("سند صرف"))
-    
-    c.setFont(font_name, 12)
-    c.setFillColor(colors.white)
+    # Reference Number
     ref_text = expense.invoice_reference if expense.invoice_reference else str(expense.id)
-    c.drawString(50, height - 100, f"Ref: {ref_text}")
-
-    # Body
-    y = height - 200
-    
-    c.setFillColor(GRAY)
-    c.setFont(font_name, 12)
-    c.drawRightString(width - 50, y, ar("التاريخ:"))
     c.setFillColor(DARK)
-    c.drawString(width - 200, y, str(expense.expense_date))
+    c.setFont(font_name, 16)
+    c.drawRightString(width - 40, height - 115, f"Ref. {ref_text}")
 
-    y -= 30
-    c.setFillColor(GRAY)
-    c.drawRightString(width - 50, y, ar("صرفنا إلى السيد/السادة:"))
-    c.setFillColor(DARK)
-    payee = expense.vendor_name if expense.vendor_name else "نثريات"
-    c.drawRightString(width - 50, y - 25, ar(payee))
-    
-    y -= 60
-    c.setFillColor(GRAY)
-    c.drawRightString(width - 50, y, ar("مبلغ وقدره:"))
-    c.setFillColor(GOLD)
-    c.setFont(font_name, 18)
-    c.drawRightString(width - 50, y - 30, ar("دينار اردني") + f" {expense.amount:,.2f}")
-    
-    y -= 80
-    c.setFillColor(LIGHT_GRAY)
-    c.rect(40, y - 60, width - 80, 80, fill=1, stroke=0)
-    c.setFillColor(DARK)
-    c.setFont(font_name, 12)
-    
-    cat = expense.category.name if expense.category else "N/A"
-    c.drawRightString(width - 60, y - 20, ar(f"التصنيف: {cat}"))
-    c.drawRightString(width - 60, y - 45, ar(f"وذلك عن: {expense.description}"))
-
-    # Footer
+    # Separator
     c.setStrokeColor(GOLD)
     c.setLineWidth(1)
-    c.line(50, 80, width - 50, 80)
-    
+    c.line(40, height - 140, width - 40, height - 140)
+
+    # Contact Info
+    y_info = height - 110
     c.setFillColor(GRAY)
     c.setFont(font_name, 9)
-    c.drawCentredString(width / 2, 60, ar("أبو رخية بلازا - جميع الحقوق محفوظة © 2026"))
+    # Align with receipt style (indented from logo)
+    c.drawString(160, y_info, "Abu Rakhieh Plaza")
+    c.drawString(160, y_info - 12, "Amman, 7th Circle")
+    c.drawString(160, y_info - 24, "+962 77 50 000 95")
+
+    # --- Body Fields ---
+    y = height - 190
+    gap = 48 
+
+    def draw_field(title_en, title_ar, value, y_pos):
+        # Label
+        c.setFillColor(GOLD)
+        c.setFont(font_name, 9)
+        c.drawString(40, y_pos + 12, title_en.upper())
+        c.drawRightString(width - 40, y_pos + 12, ar(title_ar))
+        
+        # Value
+        c.setFillColor(DARK)
+        c.setFont(font_name, 13)
+        val_str = str(value) if value else "-"
+        c.drawCentredString(width / 2, y_pos, ar(val_str))
+        
+        # Underline
+        c.setStrokeColor(HexColor('#DDDDDD'))
+        c.setLineWidth(0.5)
+        c.line(40, y_pos - 8, width - 40, y_pos - 8)
+        
+        return y_pos - gap
+
+    # 1. Date
+    y = draw_field("Transaction Date", "التاريخ", str(expense.expense_date), y)
+
+    # 2. Paid To (Vendor)
+    payee = expense.vendor_name if expense.vendor_name else "Petty Cash / نثريات"
+    y = draw_field("Paid To", "صرفنا إلى السيد/السادة", payee, y)
+
+    # 3. Sum
+    y = draw_field("The Sum of", "مبلغ وقدره", f"{expense.amount:,.2f} JOD", y)
+
+    # 4. Category
+    cat_name = expense.category.name if expense.category else "General"
+    y = draw_field("Category", "التصنيف", cat_name, y)
+
+    # 5. Description (For)
+    # Combine description and building info if relevant
+    desc = expense.description
+    if expense.unit:
+        desc += f" - Unit {expense.unit.unit_number}"
+    elif expense.building:
+        desc += f" - {expense.building.name}"
+        
+    y = draw_field("Description", "وذلك عن", desc, y)
+
+    # --- Signature ---
+    sig_y = 80
+    c.setStrokeColor(GOLD)
+    c.setLineWidth(1)
+    c.rect(width - 200, sig_y, 160, 50, stroke=1, fill=0)
+    c.setFillColor(GOLD)
+    c.setFont(font_name, 9)
+    c.drawCentredString(width - 120, sig_y - 12, f"Authorized Signature / {ar('التوقيع')}")
+
+    # --- Footer ---
+    footer_y = 30
+    c.setFillColor(DARK)
+    c.setFont(font_name, 8)
+    c.drawCentredString(width / 2, footer_y, "Abu Rakhieh Plaza Property Management")
 
     c.showPage()
     c.save()
