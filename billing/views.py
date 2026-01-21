@@ -21,8 +21,13 @@ class ChequeViewSet(viewsets.ModelViewSet):
     Supports:
     - List/Filter
     - Actions: deposit, clear, bounce
+    Optimized with select_related for fast loading.
     """
-    queryset = Cheque.objects.all().order_by('cheque_date')
+    queryset = Cheque.objects.select_related(
+        'payment',
+        'payment__invoice',
+        'payment__invoice__tenant'
+    ).all().order_by('cheque_date')
     serializer_class = ChequeSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['status', 'cheque_date', 'payment__invoice__tenant']
@@ -147,13 +152,17 @@ class PaymentViewSet(mixins.CreateModelMixin,
     - GET (List/Retrieve)
     - POST (Record Payment)
     - DELETE (Void/Reverse Payment)
+    Optimized with select_related and prefetch_related for fast loading.
     """
-    queryset = Payment.objects.all().order_by('-payment_date', '-id')
+    queryset = Payment.objects.select_related(
+        'invoice',
+        'invoice__tenant'
+    ).prefetch_related(
+        'cheques'
+    ).all().order_by('-payment_date', '-id')
     serializer_class = PaymentSerializer
     permission_classes = [CanPerformFinancialCommand]
     filter_backends = [DjangoFilterBackend]
-    # Note: 'invoice__tenant' requires related filter setup, typically automatic with django-filters
-    # but exact lookup might need explicit declaring if strictly matching ID.
     filterset_fields = ['invoice', 'invoice__tenant', 'payment_date', 'payment_method', 'reference_number']
 
     def perform_destroy(self, instance):

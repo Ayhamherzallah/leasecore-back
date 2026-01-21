@@ -6,30 +6,46 @@ class TenantDocumentSerializer(serializers.ModelSerializer):
         model = TenantDocument
         fields = ['id', 'document', 'description', 'created_at']
 
+
+class TenantLiteSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for dropdowns/selects.
+    No financial calculations = very fast.
+    """
+    class Meta:
+        model = Tenant
+        fields = ['id', 'name', 'phone', 'tenant_type']
+
+
 class TenantSerializer(serializers.ModelSerializer):
-    financial_stats = serializers.SerializerMethodField()
+    """
+    Full serializer with financial stats pre-calculated via annotations.
+    """
     documents = TenantDocumentSerializer(many=True, read_only=True)
+    
+    # These come from annotations in the ViewSet queryset
+    total_invoiced = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    total_paid = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    outstanding = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    contract_count = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Tenant
-        fields = ['id', 'name', 'national_id', 'tax_number', 'email', 'phone', 'tenant_type', 'documents', 'financial_stats']
-
-    def get_financial_stats(self, obj):
-        from billing.models import Invoice
-        from django.db.models import Sum
-        
-        invoices = Invoice.objects.filter(tenant=obj)
-        total_invoiced = invoices.aggregate(s=Sum('total_amount'))['s'] or 0
-        total_paid = invoices.aggregate(s=Sum('paid_amount'))['s'] or 0
-        
-        return {
-            'total_invoiced': total_invoiced,
-            'total_paid': total_paid,
-            'outstanding': total_invoiced - total_paid,
-            'payment_ratio': (total_paid / total_invoiced * 100) if total_invoiced > 0 else 0
-        }
+        fields = ['id', 'name', 'national_id', 'tax_number', 'email', 'phone', 'tenant_type', 
+                  'documents', 'total_invoiced', 'total_paid', 'outstanding', 'contract_count']
 
 class ContractSerializer(serializers.ModelSerializer):
+    # Direct lookups via select_related (fast)
+    tenant_name = serializers.CharField(source='tenant.name', read_only=True)
+    tenant_phone = serializers.CharField(source='tenant.phone', read_only=True)
+    unit_number = serializers.CharField(source='unit.unit_number', read_only=True)
+    unit_floor = serializers.CharField(source='unit.floor.name', read_only=True)
+    
+    # Pre-calculated via annotations in the ViewSet (fast)
+    invoice_count = serializers.IntegerField(read_only=True)
+    total_invoiced = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    total_paid = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    
     class Meta:
         model = Contract
         fields = '__all__'

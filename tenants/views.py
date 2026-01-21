@@ -5,7 +5,7 @@ from django.db import transaction
 from django.utils import timezone
 from .models import Tenant, Contract, TenantDocument
 from properties.models import Unit
-from .serializers import TenantSerializer, ContractSerializer
+from .serializers import TenantSerializer, TenantLiteSerializer, ContractSerializer
 
 import logging
 logger = logging.getLogger(__name__)
@@ -14,9 +14,47 @@ class TenantViewSet(viewsets.ModelViewSet):
     """
     Standard ViewSet for managing Tenants.
     Supports tax_number and multiple document uploads.
+    Uses database annotations for fast financial stats.
     """
-    queryset = Tenant.objects.all()
     serializer_class = TenantSerializer
+    
+    def get_queryset(self):
+        from django.db.models import Sum, Count, Value, DecimalField, F
+        from django.db.models.functions import Coalesce
+        from decimal import Decimal
+        
+        return Tenant.objects.prefetch_related('documents').annotate(
+            total_invoiced=Coalesce(
+                Sum('invoices__total_amount'),
+                Value(Decimal('0.00')),
+                output_field=DecimalField(max_digits=12, decimal_places=2)
+            ),
+            total_paid=Coalesce(
+                Sum('invoices__paid_amount'),
+                Value(Decimal('0.00')),
+                output_field=DecimalField(max_digits=12, decimal_places=2)
+            ),
+            outstanding=Coalesce(
+                Sum('invoices__total_amount'),
+                Value(Decimal('0.00')),
+                output_field=DecimalField(max_digits=12, decimal_places=2)
+            ) - Coalesce(
+                Sum('invoices__paid_amount'),
+                Value(Decimal('0.00')),
+                output_field=DecimalField(max_digits=12, decimal_places=2)
+            ),
+            contract_count=Count('contracts', distinct=True)
+        ).order_by('name')
+
+    @action(detail=False, methods=['get'])
+    def lite(self, request):
+        """
+        Fast endpoint for dropdowns/selects.
+        Returns only id, name, phone, tenant_type - no financial calculations.
+        """
+        tenants = Tenant.objects.all().order_by('name')
+        serializer = TenantLiteSerializer(tenants, many=True)
+        return Response(serializer.data)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -99,10 +137,34 @@ class ContractViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing Contracts.
     Includes custom actions for termination.
+    Uses annotations for fast aggregations instead of per-object queries.
     """
-    queryset = Contract.objects.all()
     serializer_class = ContractSerializer
     filterset_fields = ['tenant', 'unit', 'status']
+    search_fields = ['tenant__name', 'unit__unit_number']
+    ordering_fields = ['start_date', 'end_date', 'rent_amount', 'status', 'created_at']
+    ordering = ['-start_date']
+    
+    def get_queryset(self):
+        from django.db.models import Count, Sum, Value, DecimalField
+        from django.db.models.functions import Coalesce
+        from decimal import Decimal
+        
+        return Contract.objects.select_related(
+            'tenant', 'unit', 'unit__floor'
+        ).annotate(
+            invoice_count=Count('invoices'),
+            total_invoiced=Coalesce(
+                Sum('invoices__total_amount'), 
+                Value(Decimal('0.00')), 
+                output_field=DecimalField(max_digits=12, decimal_places=2)
+            ),
+            total_paid=Coalesce(
+                Sum('invoices__paid_amount'), 
+                Value(Decimal('0.00')), 
+                output_field=DecimalField(max_digits=12, decimal_places=2)
+            )
+        ).order_by('-start_date')
 
     def create(self, request, *args, **kwargs):
         logger.info(f"Creating Contract Payload: {request.data}")

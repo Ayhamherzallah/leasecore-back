@@ -23,8 +23,11 @@ class ChequeInputSerializer(serializers.ModelSerializer):
 class PaymentSerializer(serializers.ModelSerializer):
     """
     Serializer for creating payments.
+    Includes related tenant info for fast list loading.
     """
     invoice_ref = serializers.CharField(source='invoice.invoice_number', read_only=True)
+    tenant_name = serializers.CharField(source='invoice.tenant.name', read_only=True)
+    tenant_id = serializers.IntegerField(source='invoice.tenant.id', read_only=True)
     cheques = ChequeSerializer(many=True, read_only=True)
     
     # Input for creating a Check
