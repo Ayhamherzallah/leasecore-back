@@ -91,6 +91,50 @@ class TenantViewSet(viewsets.ModelViewSet):
 
         return Response(serializer.data)
     
+    @action(detail=True, methods=['post'], url_path='documents')
+    def upload_document(self, request, pk=None):
+        """
+        Upload a new document to a tenant.
+        POST /api/tenants/{id}/documents/
+        """
+        tenant = self.get_object()
+        file = request.FILES.get('document')
+        
+        if not file:
+            return Response({"error": "No file provided."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        description = request.data.get('description', file.name)
+        doc = TenantDocument.objects.create(
+            tenant=tenant,
+            document=file,
+            description=description
+        )
+        
+        return Response({
+            "id": doc.id,
+            "document": doc.document.url,
+            "description": doc.description,
+            "created_at": doc.created_at.isoformat()
+        }, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['delete'], url_path='documents/(?P<doc_id>[^/.]+)')
+    def delete_document(self, request, pk=None, doc_id=None):
+        """
+        Delete a specific document from a tenant.
+        DELETE /api/tenants/{id}/documents/{doc_id}/
+        """
+        tenant = self.get_object()
+        
+        try:
+            doc = TenantDocument.objects.get(id=doc_id, tenant=tenant)
+            # Delete file from storage
+            if doc.document:
+                doc.document.delete(save=False)
+            doc.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except TenantDocument.DoesNotExist:
+            return Response({"error": "Document not found."}, status=status.HTTP_404_NOT_FOUND)
+
     def destroy(self, request, *args, **kwargs):
         from django.db.models import ProtectedError
         instance = self.get_object()
