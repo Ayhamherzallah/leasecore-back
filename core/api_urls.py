@@ -24,7 +24,10 @@ router.register(r'properties/buildings', BuildingViewSet)
 router.register(r'properties/floors', FloorViewSet)
 router.register(r'properties/units', UnitViewSet)
 
+from core.views import demo_request
+
 urlpatterns = [
     path('', include(router.urls)),
     path('billing/knowledge-tax-report/', knowledge_tax_report, name='knowledge-tax-report'),
+    path('demo-request/', demo_request, name='demo-request'),
 ]
