@@ -25,7 +25,7 @@ class BillingService:
             status = Invoice.InvoiceStatus.ISSUED if is_first else Invoice.InvoiceStatus.DRAFT
             
             # Generate a unique invoice number
-            inv_num = f"INV-{contract.id}-{inst['due_date'].replace('-', '')}-{str(uuid.uuid4())[:4].upper()}"
+            inv_num = f"INV-{contract.id}-{str(inst['due_date']).replace('-', '')}-{str(uuid.uuid4())[:4].upper()}"
             
             invoice = Invoice.objects.create(
                 contract=contract,
