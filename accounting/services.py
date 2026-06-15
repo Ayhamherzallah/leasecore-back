@@ -60,6 +60,31 @@ class AccountingService:
         # Bulk Create for Atomicity
         LedgerEntry.objects.bulk_create(ledger_records)
 
+    @staticmethod
+    def _resolve_building(invoice):
+        """
+        Resolve the owner building for an invoice's ledger entries.
+        Prefers the invoice's own building (authoritative), then its contract,
+        then the tenant's active contract, then the tenant's owner building.
+        Never falls back to an arbitrary building (that would misattribute
+        financials to another vendor).
+        """
+        if invoice.building_id:
+            return invoice.building
+        if invoice.contract and invoice.contract.unit and invoice.contract.unit.floor_id:
+            return invoice.contract.unit.floor.building
+        from tenants.models import Contract
+        active = (
+            Contract.objects.filter(tenant=invoice.tenant, status='ACTIVE')
+            .select_related('unit__floor__building')
+            .first()
+        )
+        if active and active.unit and active.unit.floor_id:
+            return active.unit.floor.building
+        if invoice.tenant_id and invoice.tenant.building_id:
+            return invoice.tenant.building
+        return None
+
     @classmethod
     @transaction.atomic
     def process_invoice_ledger(cls, invoice):
@@ -70,27 +95,10 @@ class AccountingService:
         if cls._entries_exist(invoice):
             return # Idempotency check: Already booked.
 
-        # Building Context - with fallback for invoices without contracts (e.g., Knowledge Tax)
-        building = None
-        if invoice.contract and invoice.contract.unit:
-            building = invoice.contract.unit.floor.building
-        else:
-            # Fallback 1: Try to get building from tenant's active contract
-            from tenants.models import Contract
-            active_contract = Contract.objects.filter(
-                tenant=invoice.tenant, 
-                status='ACTIVE'
-            ).select_related('unit__floor__building').first()
-            
-            if active_contract and active_contract.unit:
-                building = active_contract.unit.floor.building
-            else:
-                # Fallback 2: Use the first building in the system
-                from properties.models import Building
-                building = Building.objects.first()
-                
-            if not building:
-                raise ValueError(f"Accounting Error: Invoice {invoice.invoice_number} has no linked Contract and no fallback Building found.")
+        # Building Context — authoritative owner building (no cross-vendor fallback)
+        building = cls._resolve_building(invoice)
+        if not building:
+            raise ValueError(f"Accounting Error: Invoice {invoice.invoice_number} has no owner building.")
         
         # In Cash Basis model, issuance is: Dr AR, Cr Unearned Revenue (Liability)
         # We do NOT book Income yet.
@@ -130,27 +138,10 @@ class AccountingService:
             return # Idempotency check
 
         invoice = payment.invoice
-        # Building context - with fallback for invoices without contracts
-        building = None
-        if invoice.contract and invoice.contract.unit:
-            building = invoice.contract.unit.floor.building
-        else:
-            # Fallback 1: Try to get building from tenant's active contract
-            from tenants.models import Contract
-            active_contract = Contract.objects.filter(
-                tenant=invoice.tenant, 
-                status='ACTIVE'
-            ).select_related('unit__floor__building').first()
-            
-            if active_contract and active_contract.unit:
-                building = active_contract.unit.floor.building
-            else:
-                # Fallback 2: Use the first building in the system
-                from properties.models import Building
-                building = Building.objects.first()
-                
-            if not building:
-                raise ValueError(f"Accounting Error: Payment for Invoice {invoice.invoice_number} has no linked Contract and no fallback Building found.")
+        # Building context — authoritative owner building (no cross-vendor fallback)
+        building = cls._resolve_building(invoice)
+        if not building:
+            raise ValueError(f"Accounting Error: Payment for Invoice {invoice.invoice_number} has no owner building.")
 
         # Determine Specific Revenue Account based on Invoice Type
         revenue_account = "Rental Income"
@@ -216,24 +207,12 @@ class AccountingService:
         """
         payment = cheque.payment
         invoice = payment.invoice
-        
-        # Building context - with fallback
-        building = None
-        if invoice.contract and invoice.contract.unit:
-            building = invoice.contract.unit.floor.building
-        else:
-            from tenants.models import Contract
-            active_contract = Contract.objects.filter(
-                tenant=invoice.tenant, 
-                status='ACTIVE'
-            ).select_related('unit__floor__building').first()
-            
-            if active_contract and active_contract.unit:
-                building = active_contract.unit.floor.building
-            else:
-                from properties.models import Building
-                building = Building.objects.first()
-        
+
+        # Building context — authoritative owner building (no cross-vendor fallback)
+        building = cls._resolve_building(invoice)
+        if not building:
+            raise ValueError(f"Accounting Error: Cheque {cheque.cheque_number} has no owner building.")
+
         # Determine Revenue Account
         revenue_account = "Rental Income"
         if invoice.invoice_type == "UTILITY": revenue_account = "Utility Income"
@@ -287,23 +266,11 @@ class AccountingService:
         """
         payment = cheque.payment
         invoice = payment.invoice
-        
-        # Building context - with fallback
-        building = None
-        if invoice.contract and invoice.contract.unit:
-            building = invoice.contract.unit.floor.building
-        else:
-            from tenants.models import Contract
-            active_contract = Contract.objects.filter(
-                tenant=invoice.tenant, 
-                status='ACTIVE'
-            ).select_related('unit__floor__building').first()
-            
-            if active_contract and active_contract.unit:
-                building = active_contract.unit.floor.building
-            else:
-                from properties.models import Building
-                building = Building.objects.first()
+
+        # Building context — authoritative owner building (no cross-vendor fallback)
+        building = cls._resolve_building(invoice)
+        if not building:
+            raise ValueError(f"Accounting Error: Cheque {cheque.cheque_number} has no owner building.")
 
         entries = [
             # Reverse the initial receipt

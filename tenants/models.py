@@ -8,7 +8,17 @@ class Tenant(models.Model):
 
     name = models.CharField(max_length=255)
     tenant_type = models.CharField(max_length=20, choices=TenantType.choices, default=TenantType.INDIVIDUAL)
-    
+
+    # Owner building — scopes the tenant to a vendor/building (prevents cross-vendor leakage).
+    building = models.ForeignKey(
+        'properties.Building',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='tenants',
+        db_index=True,
+    )
+
     # Identity
     national_id = models.CharField(max_length=50, blank=True, help_text="National ID / Passport Number")
     tax_number = models.CharField(max_length=50, blank=True, help_text="Tax Identification Number")

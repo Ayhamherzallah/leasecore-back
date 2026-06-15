@@ -2,8 +2,21 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 class InvoiceType(models.Model):
-    name = models.CharField(max_length=100, unique=True, help_text="e.g. Rent, Utility, Service Fee")
+    # Owner building — private per vendor. NULL = shared system default.
+    building = models.ForeignKey(
+        'properties.Building',
+        on_delete=models.CASCADE,
+        related_name='invoice_types',
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+    name = models.CharField(max_length=100, help_text="e.g. Rent, Utility, Service Fee")
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (('building', 'name'),)
+        ordering = ['name']
 
     def __str__(self):
         return self.name
@@ -27,11 +40,22 @@ class Invoice(models.Model):
 
     contract = models.ForeignKey('tenants.Contract', on_delete=models.PROTECT, related_name='invoices', null=True, blank=True)
     tenant = models.ForeignKey('tenants.Tenant', on_delete=models.PROTECT, related_name='invoices')
+    # Owner building — authoritative scope for the invoice (derived from contract,
+    # or the building it was raised under for contract-less invoices).
+    building = models.ForeignKey(
+        'properties.Building',
+        on_delete=models.PROTECT,
+        related_name='invoices',
+        null=True,
+        blank=True,
+        db_index=True,
+    )
     
     invoice_number = models.CharField(max_length=50, unique=True, db_index=True)
     # Changed: Removed choices=... to allow dynamic strings from InvoiceType model
     invoice_type = models.CharField(max_length=50) 
     description = models.CharField(max_length=255, blank=True, help_text="Custom description for the PDF (Description / البيان)")
+    notes = models.TextField(blank=True, help_text="Notes or payment terms shown on the invoice")
     issue_date = models.DateField(db_index=True)
     due_date = models.DateField(db_index=True)
     
@@ -66,6 +90,28 @@ class Invoice(models.Model):
     def __str__(self):
         return f"INV-{self.invoice_number}"
 
+    @property
+    def balance_due(self):
+        from decimal import Decimal
+        return (self.total_amount or Decimal('0')) - (self.paid_amount or Decimal('0'))
+
+    @property
+    def is_overdue(self):
+        """Issued/partially-paid invoice past its due date with an outstanding balance."""
+        from django.utils import timezone
+        if self.status in (self.InvoiceStatus.DRAFT, self.InvoiceStatus.VOID, self.InvoiceStatus.PAID):
+            return False
+        if self.balance_due <= 0 or not self.due_date:
+            return False
+        return self.due_date < timezone.now().date()
+
+    @property
+    def days_overdue(self):
+        from django.utils import timezone
+        if not self.is_overdue:
+            return 0
+        return (timezone.now().date() - self.due_date).days
+
     def save(self, *args, **kwargs):
         if not self.invoice_number:
             import uuid
@@ -77,6 +123,25 @@ class Invoice(models.Model):
             uid = str(uuid.uuid4())[:4].upper()
             self.invoice_number = f"INV-{date_str}-{uid}"
         super().save(*args, **kwargs)
+
+class InvoiceLineItem(models.Model):
+    """Individual line on a professional multi-line invoice."""
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='line_items')
+    description = models.CharField(max_length=500)
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, default=1)
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['sort_order', 'id']
+
+    @property
+    def line_total(self):
+        from decimal import Decimal
+        return (self.quantity or Decimal('0')) * (self.unit_price or Decimal('0'))
+
+    def __str__(self):
+        return f"{self.description} ({self.line_total})"
 
 class UtilityBill(models.Model):
     """
@@ -120,6 +185,7 @@ class Payment(models.Model):
     proof_document = models.FileField(upload_to='payments/%Y/%m/', blank=True, null=True)
     notes = models.TextField(blank=True, help_text="Internal notes or additional comments")
     payment_for = models.CharField(max_length=255, blank=True, help_text="Description of what is being paid for (As Payment Of)")
+    paid_by = models.CharField(max_length=200, blank=True, help_text="Name or identity of the person who made the payment")
     
     created_at = models.DateTimeField(auto_now_add=True)
 

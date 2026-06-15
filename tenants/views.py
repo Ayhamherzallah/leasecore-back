@@ -1,11 +1,14 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 from django.db import transaction
 from django.utils import timezone
 from .models import Tenant, Contract, TenantDocument
 from properties.models import Unit
 from .serializers import TenantSerializer, TenantLiteSerializer, ContractSerializer
+from users.building_access import scope_tenants, scope_contracts, user_can_access_building
+from users.permissions import CanManageBuildingOperations
 
 import logging
 logger = logging.getLogger(__name__)
@@ -17,13 +20,14 @@ class TenantViewSet(viewsets.ModelViewSet):
     Uses database annotations for fast financial stats.
     """
     serializer_class = TenantSerializer
+    permission_classes = [IsAuthenticated, CanManageBuildingOperations]
     
     def get_queryset(self):
         from django.db.models import Sum, Count, Value, DecimalField, F
         from django.db.models.functions import Coalesce
         from decimal import Decimal
         
-        return Tenant.objects.prefetch_related('documents').annotate(
+        qs = Tenant.objects.prefetch_related('documents').annotate(
             total_invoiced=Coalesce(
                 Sum('invoices__total_amount'),
                 Value(Decimal('0.00')),
@@ -45,6 +49,7 @@ class TenantViewSet(viewsets.ModelViewSet):
             ),
             contract_count=Count('contracts', distinct=True)
         ).order_by('name')
+        return scope_tenants(qs, self.request.user)
 
     @action(detail=False, methods=['get'])
     def lite(self, request):
@@ -52,9 +57,22 @@ class TenantViewSet(viewsets.ModelViewSet):
         Fast endpoint for dropdowns/selects.
         Returns only id, name, phone, tenant_type - no financial calculations.
         """
-        tenants = Tenant.objects.all().order_by('name')
+        tenants = scope_tenants(Tenant.objects.all().order_by('name'), request.user)
         serializer = TenantLiteSerializer(tenants, many=True)
         return Response(serializer.data)
+
+    def perform_create(self, serializer):
+        from rest_framework.exceptions import ValidationError as DRFValidationError
+        from users.utils import is_platform_admin
+
+        user = self.request.user
+        building = serializer.validated_data.get('building')
+        if not is_platform_admin(user):
+            if building is None or not user_can_access_building(user, building.id):
+                raise DRFValidationError(
+                    {'building': 'A valid building you have access to is required.'}
+                )
+        serializer.save()
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -184,6 +202,7 @@ class ContractViewSet(viewsets.ModelViewSet):
     Uses annotations for fast aggregations instead of per-object queries.
     """
     serializer_class = ContractSerializer
+    permission_classes = [IsAuthenticated, CanManageBuildingOperations]
     filterset_fields = ['tenant', 'unit', 'status']
     search_fields = ['tenant__name', 'unit__unit_number']
     ordering_fields = ['start_date', 'end_date', 'rent_amount', 'status', 'created_at']
@@ -194,7 +213,7 @@ class ContractViewSet(viewsets.ModelViewSet):
         from django.db.models.functions import Coalesce
         from decimal import Decimal
         
-        return Contract.objects.select_related(
+        qs = Contract.objects.select_related(
             'tenant', 'unit', 'unit__floor'
         ).annotate(
             invoice_count=Count('invoices'),
@@ -209,6 +228,7 @@ class ContractViewSet(viewsets.ModelViewSet):
                 output_field=DecimalField(max_digits=12, decimal_places=2)
             )
         ).order_by('-start_date')
+        return scope_contracts(qs, self.request.user)
 
     def create(self, request, *args, **kwargs):
         logger.info(f"Creating Contract Payload: {request.data}")
@@ -303,11 +323,20 @@ class ContractViewSet(viewsets.ModelViewSet):
         from rest_framework.exceptions import ValidationError as DRFValidationError
         
         logger.info(f"Performing Create: Validated Data: {serializer.validated_data}")
+
+        unit = serializer.validated_data.get('unit')
+        if unit and not user_can_access_building(self.request.user, unit.floor.building_id):
+            raise DRFValidationError({'detail': 'You do not have access to this building.'})
         
         try:
             with transaction.atomic():
                 contract = serializer.save()
-                
+
+                # Anchor an unowned tenant to this contract's building.
+                if contract.tenant and contract.tenant.building_id is None and unit and unit.floor_id:
+                    contract.tenant.building_id = unit.floor.building_id
+                    contract.tenant.save(update_fields=['building'])
+
                 # Check for installments in the request
                 installments = self.request.data.get('installments', [])
                 logger.info(f"Installments provided: {len(installments)} items")

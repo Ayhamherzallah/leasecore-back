@@ -1,57 +1,87 @@
 from rest_framework import permissions
 from .models import Role
+from .utils import is_platform_admin, ensure_user_profile, can_write_operations
 
-# Role-based Checks
+
 class IsSuperAdmin(permissions.BasePermission):
     def has_permission(self, request, view):
-        return (
-            request.user and 
-            request.user.is_authenticated and 
-            hasattr(request.user, 'profile') and 
-            request.user.profile.role == Role.SUPER_ADMIN
-        )
+        return is_platform_admin(request.user)
+
 
 class IsAccountant(permissions.BasePermission):
-    """
-    Allows access to Accountants and Super Admins.
-    """
-    def has_permission(self, request, view):
-        return (
-            request.user and 
-            request.user.is_authenticated and 
-            hasattr(request.user, 'profile') and 
-            request.user.profile.role in [Role.SUPER_ADMIN, Role.ACCOUNTANT]
-        )
-
-class IsManager(permissions.BasePermission):
-    """
-    Allows access to Managers, Accountants, and Super Admins.
-    """
-    def has_permission(self, request, view):
-        return (
-            request.user and 
-            request.user.is_authenticated and 
-            hasattr(request.user, 'profile') and 
-            request.user.profile.role in [Role.SUPER_ADMIN, Role.ACCOUNTANT, Role.MANAGER]
-        )
-
-# Command-based Permissions
-class CanPerformFinancialCommand(permissions.BasePermission):
-    """
-    Checks if user can perform financial commands (Issue, Payment, Cheque Ops).
-    Allowed: SUPER_ADMIN, ACCOUNTANT.
-    Denies write actions for MANAGER.
-    """
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
-        
-        # SAFE_METHODS (GET, HEAD, OPTIONS) are allowed for any authenticated user (Manager included)
+        if is_platform_admin(request.user):
+            return True
+        ensure_user_profile(request.user)
+        return (
+            hasattr(request.user, 'profile')
+            and request.user.profile.role in (Role.ACCOUNTANT, Role.BUILDING_MANAGER)
+        )
+
+
+class IsManager(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if is_platform_admin(request.user):
+            return True
+        ensure_user_profile(request.user)
+        return (
+            hasattr(request.user, 'profile')
+            and request.user.profile.role in (
+                Role.ACCOUNTANT,
+                Role.BUILDING_MANAGER,
+                Role.MANAGER,
+            )
+        )
+
+
+class CanPerformFinancialCommand(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
         if request.method in permissions.SAFE_METHODS:
             return True
-        
-        # Write methods require Accountant/Admin role
+
+        if is_platform_admin(request.user):
+            return True
+
+        ensure_user_profile(request.user)
         if hasattr(request.user, 'profile'):
-            return request.user.profile.role in [Role.SUPER_ADMIN, Role.ACCOUNTANT]
-            
+            return request.user.profile.role in (Role.ACCOUNTANT, Role.BUILDING_MANAGER)
+
         return False
+
+
+class CanManageBuildingOperations(permissions.BasePermission):
+    """Authenticated read; writes for platform admins and building managers."""
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        if request.method in permissions.SAFE_METHODS:
+            return True
+
+        if is_platform_admin(request.user):
+            return True
+
+        ensure_user_profile(request.user)
+        return (
+            hasattr(request.user, 'profile')
+            and request.user.profile.role == Role.BUILDING_MANAGER
+        )
+
+
+class CanRecordExpenses(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        if request.method in permissions.SAFE_METHODS:
+            return True
+
+        return can_write_operations(request.user)

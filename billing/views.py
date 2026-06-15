@@ -8,12 +8,37 @@ from .models import Invoice, Payment, Cheque, InvoiceType
 from .serializers import InvoiceSerializer, InvoiceListSerializer, PaymentSerializer, ChequeSerializer, InvoiceTypeSerializer
 from .services import BillingService
 from .pdf import generate_invoice_pdf, generate_receipt_pdf
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from users.permissions import CanPerformFinancialCommand
+from users.building_access import scope_invoices, scope_payments, scope_cheques, scope_catalog, user_can_access_building
+from users.utils import is_platform_admin
 
 class InvoiceTypeViewSet(viewsets.ModelViewSet):
     queryset = InvoiceType.objects.all().order_by('name')
     serializer_class = InvoiceTypeSerializer
     permission_classes = [CanPerformFinancialCommand]
+
+    def get_queryset(self):
+        return scope_catalog(super().get_queryset(), self.request.user)
+
+    def perform_create(self, serializer):
+        building = serializer.validated_data.get('building')
+        user = self.request.user
+        if not is_platform_admin(user):
+            if building is None or not user_can_access_building(user, building.id):
+                raise ValidationError({'building': 'A valid building you have access to is required.'})
+        serializer.save()
+
+    def perform_update(self, serializer):
+        instance = self.get_object()
+        if instance.building_id is None and not is_platform_admin(self.request.user):
+            raise PermissionDenied('System default types cannot be modified.')
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if instance.building_id is None and not is_platform_admin(self.request.user):
+            raise PermissionDenied('System default types cannot be deleted.')
+        instance.delete()
 
 class ChequeViewSet(viewsets.ModelViewSet):
     """
@@ -32,6 +57,9 @@ class ChequeViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['status', 'cheque_date', 'payment__invoice__tenant']
     permission_classes = [CanPerformFinancialCommand]
+
+    def get_queryset(self):
+        return scope_cheques(super().get_queryset(), self.request.user)
 
     @action(detail=True, methods=['post'])
     def deposit(self, request, pk=None):
@@ -79,15 +107,50 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     - DELETE (Void/Reverse Accounting)
     - PUT/PATCH (Update dates/details)
     """
-    queryset = Invoice.objects.select_related('tenant', 'contract', 'contract__unit').all().order_by('-issue_date', '-id')
+    queryset = Invoice.objects.select_related(
+        'tenant', 'contract', 'contract__unit'
+    ).prefetch_related('line_items').all().order_by('-issue_date', '-id')
     permission_classes = [CanPerformFinancialCommand]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['tenant', 'status', 'contract', 'invoice_number', 'invoice_type']
 
+    def get_queryset(self):
+        return scope_invoices(super().get_queryset(), self.request.user)
+
     def get_serializer_class(self):
-        if self.action == 'list':
+        if self.action in ('list', 'notifications'):
             return InvoiceListSerializer
         return InvoiceSerializer
+
+    @action(detail=False, methods=['get'])
+    def notifications(self, request):
+        """
+        GET /api/billing/invoices/notifications/
+        Overdue invoices (issued/partially-paid, past due date, balance > 0)
+        scoped to the user's buildings — used for the alerts bell and badges.
+        """
+        from django.utils import timezone
+        from django.db.models import F, Sum
+
+        today = timezone.now().date()
+        overdue_qs = self.get_queryset().filter(
+            status__in=[
+                Invoice.InvoiceStatus.ISSUED,
+                Invoice.InvoiceStatus.PARTIALLY_PAID,
+                Invoice.InvoiceStatus.OVERDUE,
+            ],
+            due_date__lt=today,
+        ).annotate(
+            _balance=F('total_amount') - F('paid_amount')
+        ).filter(_balance__gt=0).order_by('due_date')
+
+        agg = overdue_qs.aggregate(total=Sum('_balance'))
+        serializer = self.get_serializer(overdue_qs[:50], many=True)
+        return Response({
+            'count': overdue_qs.count(),
+            'total_amount': float(agg['total'] or 0),
+            'results': serializer.data,
+        })
 
     def perform_destroy(self, instance):
         """
@@ -117,7 +180,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         Generates PDF.
         """
         invoice = self.get_object()
-        buffer = generate_invoice_pdf(invoice)
+        lang = request.query_params.get('lang', 'en')
+        buffer = generate_invoice_pdf(invoice, lang=lang)
         
         response = HttpResponse(buffer, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="Invoice_{invoice.invoice_number}.pdf"'
@@ -165,6 +229,9 @@ class PaymentViewSet(mixins.CreateModelMixin,
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['invoice', 'invoice__tenant', 'payment_date', 'payment_method', 'reference_number']
 
+    def get_queryset(self):
+        return scope_payments(super().get_queryset(), self.request.user)
+
     def perform_destroy(self, instance):
         """
         Custom Destroy: Delegate to Service to reverse accounting & balance.
@@ -185,7 +252,6 @@ class PaymentViewSet(mixins.CreateModelMixin,
         # Helper: Restructure flat FormData fields into nested cheque_details for Serializer
         if data.get('payment_method') == 'CHECK':
             if 'cheque_number' not in data:
-                print("DEBUG: Missing cheque_number for CHECK payment")
                 return Response({"error": "Cheque Number is required for Check payments."}, status=status.HTTP_400_BAD_REQUEST)
             
             cheque_data = {
@@ -202,20 +268,16 @@ class PaymentViewSet(mixins.CreateModelMixin,
             elif 'cheque_image' in data and hasattr(data['cheque_image'], 'read'):
                  cheque_data['cheque_image'] = data['cheque_image']
             
-            print(f"DEBUG: Cheque Data Constructed: {cheque_data}")     
             data['cheque_details'] = cheque_data
 
         serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
-        
-        print(f"DEBUG: Serializer Validated Data Keys: {serializer.validated_data.keys()}")
 
         # Extract validated data
         payment_data = {**serializer.validated_data}
         
         # FALLBACK: If serializer dropped cheque_details (e.g. strict model matching), force inject it
         if 'cheque_details' not in payment_data and 'cheque_details' in data:
-            print("WARNING: cheque_details missing from validated_data, injecting raw data as fallback.")
             payment_data['cheque_details'] = data['cheque_details']
 
         try:
@@ -234,7 +296,8 @@ class PaymentViewSet(mixins.CreateModelMixin,
         Generates Receipt PDF.
         """
         payment = self.get_object()
-        buffer = generate_receipt_pdf(payment)
+        lang = request.query_params.get('lang', 'en')
+        buffer = generate_receipt_pdf(payment, lang=lang)
         
         response = HttpResponse(buffer, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="Receipt_{payment.id}.pdf"'

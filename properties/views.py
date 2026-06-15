@@ -1,14 +1,21 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import ProtectedError
 from .models import Building, Floor, Unit
 from .serializers import BuildingSerializer, FloorSerializer, UnitSerializer
+from users.utils import get_accessible_buildings
+from users.building_access import scope_floors, scope_units, user_can_access_building
+from users.permissions import CanManageBuildingOperations
 
 class BuildingViewSet(viewsets.ModelViewSet):
     queryset = Building.objects.all()
     serializer_class = BuildingSerializer
-    permission_classes = []
+    permission_classes = [IsAuthenticated, CanManageBuildingOperations]
+
+    def get_queryset(self):
+        return get_accessible_buildings(self.request.user).order_by('name')
 
     def destroy(self, request, *args, **kwargs):
         try:
@@ -22,9 +29,19 @@ class BuildingViewSet(viewsets.ModelViewSet):
 class FloorViewSet(viewsets.ModelViewSet):
     queryset = Floor.objects.all().order_by('number')
     serializer_class = FloorSerializer
-    permission_classes = []
+    permission_classes = [IsAuthenticated, CanManageBuildingOperations]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['building']
+
+    def get_queryset(self):
+        return scope_floors(super().get_queryset(), self.request.user)
+
+    def perform_create(self, serializer):
+        building = serializer.validated_data.get('building')
+        if building and not user_can_access_building(self.request.user, building.id):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('You do not have access to this building.')
+        serializer.save()
 
     def destroy(self, request, *args, **kwargs):
         try:
@@ -38,9 +55,19 @@ class FloorViewSet(viewsets.ModelViewSet):
 class UnitViewSet(viewsets.ModelViewSet):
     queryset = Unit.objects.all().order_by('unit_number')
     serializer_class = UnitSerializer
-    permission_classes = []
+    permission_classes = [IsAuthenticated, CanManageBuildingOperations]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['floor', 'floor__building', 'status']
+
+    def get_queryset(self):
+        return scope_units(super().get_queryset(), self.request.user)
+
+    def perform_create(self, serializer):
+        floor = serializer.validated_data.get('floor')
+        if floor and not user_can_access_building(self.request.user, floor.building_id):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('You do not have access to this building.')
+        serializer.save()
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()

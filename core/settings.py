@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     "billing",
     "expenses",
     "accounting",
+    "pdf_templates",
     "storages",
 ]
 
@@ -69,6 +70,15 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
+    # Rate limiting — protects auth/brute-force while staying generous for real use.
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': os.environ.get('THROTTLE_ANON', '60/min'),
+        'user': os.environ.get('THROTTLE_USER', '2000/min'),
+    },
 }
 
 from datetime import timedelta
@@ -81,6 +91,7 @@ SIMPLE_JWT = {
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "django.middleware.gzip.GZipMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -196,6 +207,19 @@ CORS_ALLOW_ALL_ORIGINS = os.environ.get("CORS_ALLOW_ALL_ORIGINS", "False") == "T
 if not CORS_ALLOW_ALL_ORIGINS:
     CORS_ALLOWED_ORIGINS = os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174").split(",")
     CSRF_TRUSTED_ORIGINS = os.environ.get("CSRF_TRUSTED_ORIGINS", "http://localhost:5173,http://localhost:5174").split(",")
+
+
+# Production security hardening (only active when DEBUG is off, so local dev is unaffected).
+if not DEBUG:
+    SECURE_SSL_REDIRECT = os.environ.get("SECURE_SSL_REDIRECT", "True") == "True"
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = int(os.environ.get("SECURE_HSTS_SECONDS", 31536000))  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_REFERRER_POLICY = "same-origin"
+    X_FRAME_OPTIONS = "DENY"
 
 
 # Default primary key field type

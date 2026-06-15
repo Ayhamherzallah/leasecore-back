@@ -31,7 +31,8 @@ class TenantSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Tenant
-        fields = ['id', 'name', 'national_id', 'tax_number', 'email', 'phone', 'tenant_type', 
+        fields = ['id', 'name', 'national_id', 'tax_number', 'email', 'phone', 'tenant_type',
+                  'building',
                   'documents', 'total_invoiced', 'total_paid', 'outstanding', 'contract_count']
 
 class ContractSerializer(serializers.ModelSerializer):

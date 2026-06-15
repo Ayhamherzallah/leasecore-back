@@ -27,15 +27,28 @@ class BillingService:
             # Generate a unique invoice number
             inv_num = f"INV-{contract.id}-{str(inst['due_date']).replace('-', '')}-{str(uuid.uuid4())[:4].upper()}"
             
+            building = None
+            if contract.unit and contract.unit.floor_id:
+                building = contract.unit.floor.building
+
             invoice = Invoice.objects.create(
                 contract=contract,
                 tenant=contract.tenant,
+                building=building,
                 invoice_number=inv_num,
                 invoice_type=Invoice.InvoiceTypeChoices.RENT,
-                issue_date=contract.start_date if is_first else inst['due_date'], # Issue date for future invoices can be the due date or now. Let's say due date.
+                issue_date=contract.start_date if is_first else inst['due_date'],
                 due_date=inst['due_date'],
                 total_amount=Decimal(str(inst['amount'])),
                 status=status
+            )
+            from .models import InvoiceLineItem
+            InvoiceLineItem.objects.create(
+                invoice=invoice,
+                description='Rent',
+                quantity=Decimal('1'),
+                unit_price=Decimal(str(inst['amount'])),
+                sort_order=0,
             )
             
             if is_first:
@@ -74,7 +87,6 @@ class BillingService:
         Trigger Ledger (Cash Realization)
         """
         cheque_details = payment_data.pop('cheque_details', None)
-        print(f"DEBUG: Service received cheque_details: {cheque_details}")
         invoice = payment_data['invoice']
         amount = payment_data['amount']
 
@@ -89,32 +101,16 @@ class BillingService:
         
         # 1.5 Handle Cheque Creation Logic
         if payment.payment_method == 'CHECK':
-            if cheque_details:
-                print("DEBUG: Creating Cheque Record...")
+            if cheque_details and isinstance(cheque_details, dict):
                 from .models import Cheque
-                # Ensure cheque_details is a dictionary
-                if isinstance(cheque_details, dict):
-                    # Fix: Rewind/Reopen file pointer
-                    if 'cheque_image' in cheque_details:
-                        img = cheque_details['cheque_image']
-                        print(f"DEBUG: Image detected. Type: {type(img)}")
-                        if hasattr(img, 'size'):
-                            print(f"DEBUG: Image Size: {img.size}")
-                        
-                        if hasattr(img, 'closed') and img.closed:
-                            print("DEBUG: Image file was closed. Re-opening.")
-                            img.open()
-                        
-                        if hasattr(img, 'seek'):
-                            print("DEBUG: Rewinding image file.")
-                            img.seek(0)
-                            
-                    chk = Cheque.objects.create(payment=payment, **cheque_details)
-                    print(f"DEBUG: Cheque Created ID: {chk.id}")
-                else:
-                    print(f"DEBUG: cheque_details is not a dict! {type(cheque_details)}")
-            else:
-                print("DEBUG: Payment method is CHECK but NO cheque_details found!")
+                # Rewind/reopen the image file pointer if present
+                img = cheque_details.get('cheque_image')
+                if img is not None:
+                    if getattr(img, 'closed', False):
+                        img.open()
+                    if hasattr(img, 'seek'):
+                        img.seek(0)
+                Cheque.objects.create(payment=payment, **cheque_details)
             # Use strict rule: if Method is CHECK, we expect details? 
             # Ideally yes, but for now we won't strict crash if missing, unless user wants.
             # But the accounting assumes PDC In Hand. Without a Cheque record, we can't clear it later!
